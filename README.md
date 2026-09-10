@@ -26,7 +26,7 @@ See [TECHNICAL.md](TECHNICAL.md).
 ## Build
 
 ```bash
-git clone https://github.com/<you>/TabStats-weave.git
+git clone https://github.com/Milone0/TabStats-weave.git
 cd TabStats-weave
 ./gradlew build          # Windows: gradlew.bat build
 ```
