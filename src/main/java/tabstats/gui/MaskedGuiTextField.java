@@ -2,7 +2,9 @@ package tabstats.gui;
 
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.GuiTextField;
-import net.minecraftforge.fml.relauncher.ReflectionHelper;
+import tabstats.util.Reflect;
+
+import java.lang.reflect.Field;
 
 /**
  * GuiTextField that keeps the real text value but masks what is rendered while still
@@ -128,18 +130,15 @@ public class MaskedGuiTextField extends GuiTextField {
     }
 
     private Integer getLineScrollOffset() {
-        try {
-            return ReflectionHelper.getPrivateValue(GuiTextField.class, this, LINE_SCROLL_FIELD);
-        } catch (ReflectionHelper.UnableToAccessFieldException ignored) {
-            return null;
-        }
+        return Reflect.get(lineScrollField(), this);
     }
 
     private void setLineScrollOffset(int offset) {
-        try {
-            ReflectionHelper.setPrivateValue(GuiTextField.class, this, offset, LINE_SCROLL_FIELD);
-        } catch (ReflectionHelper.UnableToAccessFieldException ignored) {
-            // If we cannot set the value we simply accept the slight visual mismatch.
-        }
+        // If we cannot set the value we simply accept the slight visual mismatch.
+        Reflect.set(lineScrollField(), this, offset);
+    }
+
+    private static Field lineScrollField() {
+        return Reflect.field(GuiTextField.class, LINE_SCROLL_FIELD);
     }
 }

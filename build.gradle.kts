@@ -1,10 +1,5 @@
-import dev.architectury.pack200.java.Pack200Adapter
-
 plugins {
-    id("java")
-    id("gg.essential.loom") version "1.6.+"
-    id("net.kyori.blossom") version "1.3.1"
-    id("dev.architectury.architectury-pack200") version "0.1.3"
+    id("net.weavemc.gradle") version "1.4.0"
 }
 
 val projectName: String by project
@@ -14,93 +9,47 @@ val projectGroup: String by project
 val mcVersion = property("minecraft.version")?.toString()
     ?: error("minecraft.version is not set")
 
-val projectDescription = findProperty("projectDescription")?.toString().orEmpty()
-val projectUrl = findProperty("projectUrl")?.toString().orEmpty()
-val projectUpdateUrl = findProperty("projectUpdateUrl")?.toString().orEmpty()
-
 group = projectGroup
 version = projectVersion
 
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(8))
+weave {
+    configure {
+        name = projectName
+        modId = projectId
+        entryPoints = listOf("tabstats.TabStats")
+        // Lunar Client runs Minecraft under MCP *named* mappings below 1.16.5, which is also
+        // the namespace this source tree is written in, so no remapping of our own code.
+        mcpMappings()
     }
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
-    withSourcesJar()
-}
-
-loom {
-    silentMojangMappingsLicense()
-
-    forge {
-        pack200Provider.set(Pack200Adapter())
-    }
-
-    runs {
-        named("client") {
-            ideConfigGenerated(true)
-        }
-    }
-}
-
-blossom {
-    replaceToken("@VERSION@", projectVersion)
-    replaceToken("@NAME@", projectName)
-    replaceToken("@ID@", projectId)
+    version(mcVersion)
 }
 
 repositories {
     mavenCentral()
+    maven("https://gitlab.com/api/v4/projects/80566527/packages/maven")
 }
 
 dependencies {
-    minecraft("com.mojang:minecraft:$mcVersion")
-    mappings("de.oceanlabs.mcp:mcp_stable:22-1.8.9")
-    forge("net.minecraftforge:forge:1.8.9-11.15.1.2318-1.8.9")
+    implementation("net.weavemc:loader:1.4.0")
+    implementation("net.weavemc:internals:1.4.0")
+    implementation("net.weavemc.api:api:1.4.0")
+    implementation("net.weavemc.api:api-v1_8:1.4.0")
+}
+
+java {
+    withSourcesJar()
 }
 
 tasks {
+    // Built with the local JDK 17 but emitting Java 8 bytecode against the Java 8 API, so no
+    // separate JDK 8 toolchain has to be provisioned. (Gradle 9 is incompatible with the
+    // foojay resolver version that would do the provisioning.)
     withType<JavaCompile>().configureEach {
         options.encoding = "UTF-8"
-    }
-
-    processResources {
-        val metadata = mapOf(
-            "id" to projectId,
-            "name" to projectName,
-            "version" to projectVersion,
-            "mcversion" to mcVersion,
-            "description" to projectDescription,
-            "url" to projectUrl,
-            "updateUrl" to projectUpdateUrl,
-        )
-
-        inputs.properties(metadata)
-
-        filesMatching("mcmod.info") {
-            expand(metadata)
-        }
-
-        filesMatching("mixins.$projectId.json") {
-            expand(mapOf("id" to projectId))
-        }
+        options.release.set(8)
     }
 
     jar {
         archiveBaseName.set(projectName)
-        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-        manifest {
-            attributes(
-                "ModSide" to "CLIENT",
-                "ForceloadAsMod" to true,
-                "TweakOrder" to "0",
-            )
-        }
     }
-}
-
-val localInstallScript = file("install.local.gradle.kts")
-if (localInstallScript.exists()) {
-    apply(from = localInstallScript)
 }

@@ -4,19 +4,23 @@ import tabstats.TabStats;
 import tabstats.config.ModConfig;
 import tabstats.render.StatsTab;
 import net.minecraft.client.Minecraft;
-import net.minecraftforge.client.event.MouseEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.weavemc.api.event.MouseEvent;
+import net.weavemc.api.event.SubscribeEvent;
 
 public class InputListener {
-    private final Minecraft mc = Minecraft.getMinecraft();
 
     @SubscribeEvent
     public void onMouse(MouseEvent event) {
-        if (event.dwheel == 0) {
+        if (event.getDWheel() == 0) {
             return;
         }
 
         if (!ModConfig.getInstance().isModEnabled()) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null) {
             return;
         }
 
@@ -38,6 +42,6 @@ public class InputListener {
             return;
         }
 
-        statsTab.handleMouseWheel(event.dwheel, mc.getNetHandler().getPlayerInfoMap().size());
+        statsTab.handleMouseWheel(event.getDWheel(), mc.getNetHandler().getPlayerInfoMap().size());
     }
 }
