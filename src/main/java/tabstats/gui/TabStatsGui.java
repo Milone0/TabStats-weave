@@ -8,7 +8,6 @@ import tabstats.util.ChatColor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
-import java.io.IOException;
 
 public class TabStatsGui extends GuiScreen {
     private GuiButton headerFooterButton;
@@ -90,7 +89,7 @@ public class TabStatsGui extends GuiScreen {
     }
 
     @Override
-    protected void keyTyped(char typedChar, int keyCode) throws IOException {
+    protected void keyTyped(char typedChar, int keyCode) {
         if (keyCode == 1) {
             Minecraft.getMinecraft().displayGuiScreen(null);
             return;

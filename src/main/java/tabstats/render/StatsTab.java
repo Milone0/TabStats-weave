@@ -3,6 +3,7 @@ package tabstats.render;
 import tabstats.TabStats;
 import tabstats.playerapi.HPlayer;
 import tabstats.playerapi.StatWorld;
+import tabstats.listener.GameOverlayListener;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.playerapi.api.stats.StatDouble;
 import tabstats.playerapi.api.stats.StatInt;
@@ -29,8 +30,6 @@ import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.IChatComponent;
 import net.minecraft.util.MathHelper;
 import net.minecraft.world.WorldSettings;
-import net.minecraftforge.fml.relauncher.Side;
-import net.minecraftforge.fml.relauncher.SideOnly;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.text.WordUtils;
 import org.lwjgl.opengl.GL11;
@@ -595,7 +594,6 @@ public class StatsTab extends GuiPlayerTabOverlay {
         }
     }
 
-    @SideOnly(Side.CLIENT)
     static class PlayerComparator implements Comparator<NetworkPlayerInfo> {
         private PlayerComparator() {
         }
@@ -637,5 +635,20 @@ public class StatsTab extends GuiPlayerTabOverlay {
         }
 
         return this.getPlayerName(playerInfo);
+    }
+
+    /**
+     * Entry point used by vanilla GuiIngame. This object replaces the vanilla
+     * GuiPlayerTabOverlay, so this override is what draws the stats tab list. Falls back to the
+     * vanilla list whenever the mod is disabled.
+     */
+    @Override
+    public void renderPlayerlist(int width, Scoreboard scoreboardIn, ScoreObjective scoreObjectiveIn) {
+        TabStats tabStats = TabStats.getTabStats();
+        GameOverlayListener listener = tabStats == null ? null : tabStats.getGameOverlayListener();
+
+        if (listener == null || !listener.renderTab(scoreboardIn, scoreObjectiveIn)) {
+            super.renderPlayerlist(width, scoreboardIn, scoreObjectiveIn);
+        }
     }
 }

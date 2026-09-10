@@ -1,12 +1,8 @@
 pluginManagement {
     repositories {
-        mavenCentral()
         gradlePluginPortal()
-        maven("https://maven.architectury.dev/")
-        maven("https://maven.fabricmc.net/")
-        maven("https://repo.essential.gg/repository/maven-public/")
-        maven("https://maven.minecraftforge.net/")
-        maven("https://jitpack.io/")
+        // https://gitlab.com/weave-mc/weave/-/packages/
+        maven("https://gitlab.com/api/v4/projects/80566527/packages/maven")
     }
 }
 

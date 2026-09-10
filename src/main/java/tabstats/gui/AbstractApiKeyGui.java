@@ -6,7 +6,6 @@ import net.minecraft.client.gui.GuiScreen;
 import tabstats.TabStats;
 import tabstats.config.ModConfig;
 
-import java.io.IOException;
 
 abstract class AbstractApiKeyGui extends GuiScreen {
     private final GuiScreen parent;
@@ -125,7 +124,7 @@ abstract class AbstractApiKeyGui extends GuiScreen {
     }
 
     @Override
-    protected void keyTyped(char typedChar, int keyCode) throws IOException {
+    protected void keyTyped(char typedChar, int keyCode) {
         if (keyCode == 1) {
             returnToParent();
             return;
@@ -139,7 +138,7 @@ abstract class AbstractApiKeyGui extends GuiScreen {
     }
 
     @Override
-    protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
+    protected void mouseClicked(int mouseX, int mouseY, int mouseButton) {
         super.mouseClicked(mouseX, mouseY, mouseButton);
         this.apiField.mouseClicked(mouseX, mouseY, mouseButton);
     }

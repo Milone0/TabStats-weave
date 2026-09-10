@@ -7,21 +7,26 @@ import tabstats.playerapi.StatWorld;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.render.StatsTab;
 import tabstats.util.ChatColor;
+import tabstats.util.Reflect;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiIngame;
 import net.minecraft.client.gui.GuiPlayerTabOverlay;
 import net.minecraft.scoreboard.ScoreObjective;
 import net.minecraft.scoreboard.Scoreboard;
 import net.minecraft.util.IChatComponent;
-import net.minecraftforge.client.event.RenderGameOverlayEvent;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.relauncher.ReflectionHelper;
+import net.weavemc.api.event.SubscribeEvent;
+import net.weavemc.api.event.TickEvent;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 public class GameOverlayListener {
+    private static final String[] OVERLAY_FIELD = {"overlayPlayerList", "field_175196_v"};
+    private static final String[] HEADER_FIELD = {"header", "field_175256_i"};
+    private static final String[] FOOTER_FIELD = {"footer", "field_175255_h"};
+
     private final StatsTab statsTab;
     private final Minecraft mc = Minecraft.getMinecraft();
     private boolean overlayInjected = false;
@@ -33,7 +38,7 @@ public class GameOverlayListener {
         this.statsTab.setRenderHeaderFooter(ModConfig.getInstance().isRenderHeaderFooterEnabled());
         this.modEnabled = ModConfig.getInstance().isModEnabled();
     }
-    
+
     /**
      * Gets the StatsTab instance for external access
      */
@@ -41,33 +46,47 @@ public class GameOverlayListener {
         return this.statsTab;
     }
 
+    /*
+     * Forge let us cancel just the PLAYER_LIST element of the HUD. The Weave equivalent of
+     * RenderGameOverlayEvent covers the whole overlay, so instead the custom overlay object is
+     * swapped into GuiIngame and drives rendering itself -- see StatsTab.renderPlayerlist.
+     * Keeping the swap in a tick handler means it survives the mod being toggled at runtime.
+     */
     @SubscribeEvent
-    public void onOverlayRender(RenderGameOverlayEvent.Pre event) {
-        if (event.type != RenderGameOverlayEvent.ElementType.PLAYER_LIST) {
-            return;
-        }
-
+    public void onClientTick(TickEvent.Post event) {
         if (this.mc.thePlayer == null) {
             return;
         }
 
-        boolean configEnabled = ModConfig.getInstance().isModEnabled();
-        if (configEnabled != this.modEnabled) {
-            setModEnabled(configEnabled);
+        syncModEnabled();
+
+        if (this.modEnabled) {
+            ensureCustomOverlayInjected();
+        } else {
+            restoreOriginalOverlay();
         }
+    }
+
+    /**
+     * Renders the stats tab list, in place of the vanilla player list.
+     * Called by StatsTab.renderPlayerlist.
+     *
+     * @return false when the caller should fall back to vanilla rendering.
+     */
+    public boolean renderTab(Scoreboard scoreboard, ScoreObjective scoreObjective) {
+        if (this.mc.thePlayer == null) {
+            return false;
+        }
+
+        syncModEnabled();
 
         if (!this.modEnabled) {
-            restoreOriginalOverlay();
-            return;
+            return false;
         }
 
-        Scoreboard scoreboard = this.mc.thePlayer.getWorldScoreboard();
-        String gamemode = resolveGamemode(scoreboard);
+        Scoreboard effectiveScoreboard = scoreboard != null ? scoreboard : this.mc.thePlayer.getWorldScoreboard();
+        String gamemode = resolveGamemode(effectiveScoreboard);
         boolean supportedGamemode = gamemode != null;
-
-        ensureCustomOverlayInjected();
-
-        event.setCanceled(true);
 
         StatWorld statWorld = TabStats.getTabStats().getStatWorld();
         HPlayer theHPlayer = statWorld == null ? null : statWorld.getPlayerByUUID(this.mc.thePlayer.getUniqueID());
@@ -85,7 +104,19 @@ public class GameOverlayListener {
         }
 
         int width = computeTabWidth(gameStatTitleList);
-        this.statsTab.renderNewPlayerlist(width, scoreboard, scoreboard.getObjectiveInDisplaySlot(0), gameStatTitleList, supportedGamemode ? gamemode : null);
+        ScoreObjective effectiveObjective = scoreObjective != null
+                ? scoreObjective
+                : (effectiveScoreboard == null ? null : effectiveScoreboard.getObjectiveInDisplaySlot(0));
+
+        this.statsTab.renderNewPlayerlist(width, effectiveScoreboard, effectiveObjective, gameStatTitleList, supportedGamemode ? gamemode : null);
+        return true;
+    }
+
+    private void syncModEnabled() {
+        boolean configEnabled = ModConfig.getInstance().isModEnabled();
+        if (configEnabled != this.modEnabled) {
+            setModEnabled(configEnabled);
+        }
     }
 
     private String resolveGamemode(Scoreboard scoreboard) {
@@ -130,6 +161,11 @@ public class GameOverlayListener {
         return width;
     }
 
+    private static Field overlayField() {
+        Field field = Reflect.field(GuiIngame.class, OVERLAY_FIELD);
+        return field != null ? field : Reflect.fieldOfType(GuiIngame.class, GuiPlayerTabOverlay.class);
+    }
+
     private void ensureCustomOverlayInjected() {
         if (!this.modEnabled || this.overlayInjected) {
             return;
@@ -140,36 +176,40 @@ public class GameOverlayListener {
             return;
         }
 
-        try {
-            GuiPlayerTabOverlay currentOverlay = ReflectionHelper.getPrivateValue(GuiIngame.class, guiIngame, new String[]{"overlayPlayerList", "field_175196_v"});
-
-            if (this.originalOverlay == null && currentOverlay != this.statsTab) {
-                this.originalOverlay = currentOverlay;
-            }
-
-            if (currentOverlay == this.statsTab) {
-                this.overlayInjected = true;
-                return;
-            }
-
-            ReflectionHelper.setPrivateValue(GuiIngame.class, guiIngame, this.statsTab, new String[]{"overlayPlayerList", "field_175196_v"});
-
-            if (currentOverlay != null) {
-                IChatComponent currentHeader = ReflectionHelper.getPrivateValue(GuiPlayerTabOverlay.class, currentOverlay, new String[]{"header", "field_175256_i"});
-                IChatComponent currentFooter = ReflectionHelper.getPrivateValue(GuiPlayerTabOverlay.class, currentOverlay, new String[]{"footer", "field_175255_h"});
-
-                if (currentHeader != null) {
-                    this.statsTab.setHeader(currentHeader.createCopy());
-                }
-
-                if (currentFooter != null) {
-                    this.statsTab.setFooter(currentFooter.createCopy());
-                }
-            }
-
-            this.overlayInjected = true;
-        } catch (ReflectionHelper.UnableToFindFieldException | ReflectionHelper.UnableToAccessFieldException ignored) {
+        Field field = overlayField();
+        if (field == null) {
+            return;
         }
+
+        GuiPlayerTabOverlay currentOverlay = Reflect.get(field, guiIngame);
+
+        if (this.originalOverlay == null && currentOverlay != this.statsTab) {
+            this.originalOverlay = currentOverlay;
+        }
+
+        if (currentOverlay == this.statsTab) {
+            this.overlayInjected = true;
+            return;
+        }
+
+        if (!Reflect.set(field, guiIngame, this.statsTab)) {
+            return;
+        }
+
+        if (currentOverlay != null) {
+            IChatComponent currentHeader = Reflect.get(Reflect.field(GuiPlayerTabOverlay.class, HEADER_FIELD), currentOverlay);
+            IChatComponent currentFooter = Reflect.get(Reflect.field(GuiPlayerTabOverlay.class, FOOTER_FIELD), currentOverlay);
+
+            if (currentHeader != null) {
+                this.statsTab.setHeader(currentHeader.createCopy());
+            }
+
+            if (currentFooter != null) {
+                this.statsTab.setFooter(currentFooter.createCopy());
+            }
+        }
+
+        this.overlayInjected = true;
     }
 
     public void setModEnabled(boolean enabled) {
@@ -198,13 +238,13 @@ public class GameOverlayListener {
             return;
         }
 
-        try {
+        Field field = overlayField();
+        if (field != null) {
             GuiPlayerTabOverlay target = this.originalOverlay != null ? this.originalOverlay : new GuiPlayerTabOverlay(this.mc, guiIngame);
             if (this.originalOverlay == null) {
                 this.originalOverlay = target;
             }
-            ReflectionHelper.setPrivateValue(GuiIngame.class, guiIngame, target, new String[]{"overlayPlayerList", "field_175196_v"});
-        } catch (ReflectionHelper.UnableToFindFieldException | ReflectionHelper.UnableToAccessFieldException ignored) {
+            Reflect.set(field, guiIngame, target);
         }
 
         this.overlayInjected = false;
