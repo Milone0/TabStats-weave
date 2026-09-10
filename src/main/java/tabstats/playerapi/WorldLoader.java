@@ -8,8 +8,8 @@ import tabstats.config.ModConfig;
 import tabstats.listener.GameOverlayListener;
 import tabstats.util.ChatColor;
 import tabstats.util.Handler;
-import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
-import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.weavemc.api.event.SubscribeEvent;
+import net.weavemc.api.event.TickEvent;
 import net.minecraft.world.World;
 
 import java.util.ArrayList;
@@ -66,11 +66,7 @@ public class WorldLoader extends StatWorld {
 
     /* populates and checks the stat world player cache every client tick */
     @SubscribeEvent
-    public void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END) {
-            return;
-        }
-
+    public void onClientTick(TickEvent.Post event) {
         if (!ModConfig.getInstance().isModEnabled()) {
             // Just reset scroll when disabling, preserve cache
             if (lastModEnabled) {
