@@ -15,15 +15,21 @@ See [TECHNICAL.md](TECHNICAL.md).
 ## Requirements
 
 - Lunar Client with Minecraft **1.8.9**
-- **JDK 17** or newer — to build only, not to play
 - A Hypixel API key from the [Developer Dashboard](https://developer.hypixel.net/dashboard)
   (the old in-game `/api new` was removed in 2023)
 - The vanilla `1.8.9.jar` at `%APPDATA%\.minecraft\versions\1.8.9\1.8.9.jar`
   — Weave reads it to build its mappings. If it is missing, launch 1.8.9 once in the
   official Minecraft launcher, or point Weave elsewhere with
   `-Dweave.vanilla.jar.path=...`
+- **JDK 17** or newer — only if you build the mod yourself
 
-## Build
+## Get the jar
+
+Download `TabStats-1.3.0.jar` from the
+[latest release](https://github.com/Milone0/TabStats-weave/releases/latest). That is all
+most people need — continue at [Install](#install).
+
+To build it from source instead, e.g. to change something:
 
 ```bash
 git clone https://github.com/Milone0/TabStats-weave.git
