@@ -2,6 +2,7 @@ package tabstats;
 
 import tabstats.command.TabStatsCommand;
 import tabstats.config.ModConfig;
+import tabstats.listener.ChatListener;
 import tabstats.listener.GameOverlayListener;
 import tabstats.listener.GuiOpenListener;
 import tabstats.listener.InputListener;
@@ -37,7 +38,8 @@ public class TabStats implements ModInitializer {
 
         this.statWorld = new WorldLoader();
         this.gameOverlayListener = new GameOverlayListener();
-        this.registerListeners(statWorld, gameOverlayListener, new GuiOpenListener(), new InputListener());
+        this.registerListeners(statWorld, gameOverlayListener, new GuiOpenListener(), new InputListener(),
+                new ChatListener());
 
         this.applyModEnabled(ModConfig.getInstance().isModEnabled());
 

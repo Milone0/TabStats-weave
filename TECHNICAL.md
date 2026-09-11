@@ -223,6 +223,57 @@ permits writing non-static final fields through reflection once access is grante
 Note the width argument from vanilla is ignored; the mod computes a wider one to fit the
 stat columns, exactly as the Forge build did.
 
+### Players a pre-game lobby hides
+
+A pre-game lobby gives away nobody: no usable tab entry, no named entity. The one moment a
+name becomes known is when that player writes something, so `ChatListener` feeds
+`ChatEvent.Received` through `ChatNameParser` and hands the name to
+`StatWorld.revealFromChat`, which:
+
+1. resolves the name to a UUID against `api.mojang.com` — the Hypixel v2 player endpoint
+   takes UUIDs only, and a chat line carries a name. A 404 there means no such account,
+   which on Hypixel means a nick: the player is kept under a locally derived placeholder
+   UUID and drawn as `[NICKED]`, and no skin is requested for it.
+2. runs the normal stat fetch, so those players end up in the same cache as everyone else.
+
+`StatsTab.appendChatRevealed` then makes up a `NetworkPlayerInfo` per revealed player and
+appends it below the real entries, skipping anyone the server does list. Those rows are
+drawn from the API rank instead of a team prefix (they have no team) and get no scoreboard
+column (they are not on the scoreboard).
+
+Only a player writing something reveals them. A join line names one too, but Hypixel
+anonymises it — a real lobby logs `c8oxqbN5pHN has joined (13/16)!` — so joining reveals
+nobody. Party, guild and private messages are rejected as well, since their sender need not
+be in this lobby; so are the player's own messages and anyone the server already lists in the
+tab list, there being nothing left to uncover there. A reveal then only happens while the
+scoreboard sidebar names a supported game, the same condition under which stat columns appear
+at all.
+
+What a player line is cannot be read off the colours. Hypixel writes a rankless player as
+`§7Name§7: message` and a server label as `§eStore: §b…` — the colon is coloured in both, and
+an earlier version of this that insisted on the `§f: ` of a ranked player's line silently
+revealed nobody. So the shape carries it: everything before the first `": "`, with bracketed
+tags stripped, has to collapse to exactly one token that is a valid username and not one of
+the labels in `NON_PLAYER_LABELS`. A stray label that is not on that list costs one bogus row
+and two API calls, which is the right way round — the failure that matters is revealing
+nobody.
+
+`ChatRevealDebug` in `config.json` (on by default for now) traces what happens to every name
+seen in chat to the game log, which is the only way to tell these formats apart without
+sitting in a lobby.
+
+Reveals are retired three ways, because a pre-game lobby does not always sit on its own
+world and the game starting is therefore not always a world change:
+
+- `StatsTab.appendChatRevealed` drops a player the moment the server lists them in the tab
+  list itself, which is exactly what happens when the game starts. Their own entry, drawn
+  with the server's formatting, takes over.
+- `ChatListener` clears the lot on the `▬▬▬…` bar Hypixel draws around a game's start and end
+  summary, which also catches players who never made it into this game.
+- a world change clears the lot as well, for when the lobby really is left behind.
+
+A quit line drops that one name again.
+
 ## 6. Lifecycle: the one real trap
 
 Weave calls `ModInitializer.init()` from the **head of `Minecraft.main`**. At that moment
