@@ -279,16 +279,14 @@ public class StatsTab extends GuiPlayerTabOverlay {
                 if (hPlayer != null) {
                     if (hPlayer.isNicked()) {
                         name = this.getHPlayerName(playerInfo, hPlayer);
-                    } else {
-                        if (name.contains(ChatColor.OBFUSCATE.toString())) {
-                            ScorePlayerTeam liveTeam = playerInfo.getPlayerTeam();
-                            String teamPrefix = liveTeam != null ? liveTeam.getColorPrefix() : "";
-                            String color = teamPrefix.isEmpty() ? hPlayer.getPlayerRankColor() : teamPrefix;
-                            name = color + hPlayer.getPlayerName();
-                        } else {
-                            name = this.getHPlayerName(playerInfo, hPlayer);
-                        }
+                    } else if (name.contains(ChatColor.OBFUSCATE.toString())) {
+                        /* Obfuscated names are unreadable, so rebuild them - but keep the team color. */
+                        ScorePlayerTeam liveTeam = playerInfo.getPlayerTeam();
+                        String teamPrefix = liveTeam != null ? liveTeam.getColorPrefix() : "";
+                        String color = teamPrefix.isEmpty() ? hPlayer.getPlayerRankColor() : teamPrefix;
+                        name = color + hPlayer.getPlayerName();
                     }
+                    /* Otherwise keep the name exactly as the server sent it, original team colors included. */
 
                     if (gamemode != null) {
                         List<Stat> statList = resolveStats(hPlayer, gamemode);
@@ -607,33 +605,14 @@ public class StatsTab extends GuiPlayerTabOverlay {
 
     /* Custom Player Name Formatter */
     public String getHPlayerName(NetworkPlayerInfo playerInfo, HPlayer hPlayer) {
-        ScorePlayerTeam team = playerInfo.getPlayerTeam();
-        String teamPrefix = team != null ? team.getColorPrefix() : "";
-        String teamSuffix = team != null ? team.getColorSuffix() : "";
-        String playerRank = hPlayer.getPlayerRank();
-
         if (hPlayer.isNicked()) {
+            ScorePlayerTeam team = playerInfo.getPlayerTeam();
+            String teamPrefix = team != null ? team.getColorPrefix() : "";
+            String teamSuffix = team != null ? team.getColorSuffix() : "";
             return teamPrefix + ChatColor.WHITE + "[" + ChatColor.RED + "NICKED" + ChatColor.WHITE + "] " + ChatColor.WHITE + playerInfo.getGameProfile().getName() + teamSuffix;
         }
 
-        if (team != null) {
-            /** remove [NON] as it's not shown in regular tab */
-            String colorPrefix = teamPrefix;
-
-            // Don't remove gray color for non-ranked players - preserve it
-            if (ChatColor.stripColor(colorPrefix).contains(ChatColor.stripColor(playerRank)) && !playerRank.equals("§7")) {
-                playerRank = "";
-//                /* aqua colored MVP++ */
-//                if (!colorPrefix.contains(playerRank) && colorPrefix.contains("++")) {
-//                    colorPrefix = colorPrefix.replace(colorPrefix.substring(colorPrefix.indexOf("["), colorPrefix.indexOf("]") + 1), "").trim();
-//                } else {
-//                    colorPrefix = colorPrefix.replace(playerRank, "");
-//                }
-            }
-
-            return colorPrefix + playerRank + playerInfo.getGameProfile().getName() + teamSuffix;
-        }
-
+        /* Everyone else is drawn with the server's own formatting, so the team colors stay intact. */
         return this.getPlayerName(playerInfo);
     }
 
