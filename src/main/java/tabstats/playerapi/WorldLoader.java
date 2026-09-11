@@ -84,6 +84,8 @@ public class WorldLoader extends StatWorld {
             this.lastWorldJoinTime = System.currentTimeMillis();
             // Only reset scroll position on world change, preserve cache
             resetTabScroll();
+            // Names picked up from chat belong to the lobby we just left
+            this.clearChatRevealed();
         }
 
         if (mc.theWorld == null || mc.thePlayer == null) {
@@ -136,6 +138,9 @@ public class WorldLoader extends StatWorld {
                     safePlayers.add(uuid);
                 }
             }
+
+            // Chat-revealed players have no entity, so keep them out of the eviction
+            safePlayers.addAll(this.getChatRevealedUuids());
 
             this.existedMoreThan5Seconds.clear();
             this.existedMoreThan5Seconds.addAll(safePlayers);

@@ -7,6 +7,7 @@ import tabstats.playerapi.StatWorld;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.render.StatsTab;
 import tabstats.util.ChatColor;
+import tabstats.util.Gamemodes;
 import tabstats.util.Reflect;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiIngame;
@@ -120,26 +121,7 @@ public class GameOverlayListener {
     }
 
     private String resolveGamemode(Scoreboard scoreboard) {
-        if (scoreboard == null) {
-            return null;
-        }
-
-        ScoreObjective sidebarObjective = scoreboard.getObjectiveInDisplaySlot(1);
-        if (sidebarObjective == null) {
-            return null;
-        }
-
-        String stripped = ChatColor.stripColor(sidebarObjective.getDisplayName());
-        if (stripped == null) {
-            return null;
-        }
-
-        String normalized = stripped.replace(" ", "").toUpperCase();
-        if ("BEDWARS".equals(normalized) || "DUELS".equals(normalized) || "SKYWARS".equals(normalized)) {
-            return normalized;
-        }
-
-        return null;
+        return Gamemodes.resolve(scoreboard);
     }
 
     private int computeTabWidth(List<Stat> stats) {
