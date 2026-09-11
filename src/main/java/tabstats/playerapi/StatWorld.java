@@ -2,6 +2,7 @@ package tabstats.playerapi;
 
 import tabstats.config.ModConfig;
 import tabstats.playerapi.api.HypixelAPI;
+import tabstats.playerapi.api.MojangAPI;
 import tabstats.playerapi.api.games.bedwars.Bedwars;
 import tabstats.playerapi.api.games.duels.Duels;
 import tabstats.playerapi.api.games.skywars.Skywars;
@@ -11,11 +12,14 @@ import tabstats.playerapi.exception.BadJsonException;
 import tabstats.playerapi.exception.InvalidKeyException;
 import tabstats.playerapi.exception.PlayerNullException;
 import tabstats.util.ChatColor;
+import tabstats.util.Debug;
 import tabstats.util.Handler;
 import tabstats.util.NickDetector;
 import com.google.gson.JsonObject;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.util.IChatComponent;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -26,6 +30,12 @@ public class StatWorld {
     protected final Set<UUID> existedMoreThan5Seconds = ConcurrentHashMap.newKeySet();
     protected final Map<UUID, Integer> timeCheck = new HashMap<>();
     protected volatile long lastWorldJoinTime;
+    /** Upper bound on chat reveals, so a busy lobby cannot grow the tab list without end. */
+    private static final int MAX_CHAT_REVEALED = 80;
+    /** Players known only from chat, keyed by lower-case name, in the order they were revealed. */
+    private final Map<String, ChatRevealedPlayer> chatRevealed =
+            Collections.synchronizedMap(new LinkedHashMap<String, ChatRevealedPlayer>());
+    private final Set<String> chatLookupsInFlight = ConcurrentHashMap.newKeySet();
 
     public StatWorld() {
         worldPlayers = new ConcurrentHashMap<>();
@@ -48,6 +58,7 @@ public class StatWorld {
 
     public void clearPlayers() {
         worldPlayers.clear();
+        clearChatRevealed();
         // Clear all tracking maps to prevent memory leaks
         timeCheck.clear();
         statAssembly.clear();
@@ -157,20 +168,23 @@ public class StatWorld {
         if (!ModConfig.getInstance().isModEnabled()) {
             return;
         }
-        fetchStatsWithRetry(entityPlayer, 0);
+
+        IChatComponent displayName = entityPlayer.getDisplayName();
+        fetchStatsWithRetry(
+                entityPlayer.getUniqueID(),
+                entityPlayer.getName(),
+                displayName != null ? displayName.getFormattedText() : null,
+                0);
     }
-    
-    private void fetchStatsWithRetry(EntityPlayer entityPlayer, int apiRetryAttempt) {
+
+    private void fetchStatsWithRetry(UUID uuid, String playerName, String displayComponent, int apiRetryAttempt) {
         Handler.asExecutor(() -> {
             if (!ModConfig.getInstance().isModEnabled()) {
-                this.statAssembly.remove(entityPlayer.getUniqueID());
+                this.statAssembly.remove(uuid);
                 return;
             }
-            UUID uuid = entityPlayer.getUniqueID();
-            String playerName = entityPlayer.getName();
-            String playerUUID = entityPlayer.getUniqueID().toString().replace("-", "");
+            String playerUUID = uuid.toString().replace("-", "");
 
-            String displayComponent = entityPlayer.getDisplayName() != null ? entityPlayer.getDisplayName().getFormattedText() : null;
             HPlayer existing = getPlayerByIdentity(uuid, displayComponent, playerName);
             if (existing != null) {
                 cachePlayer(uuid, existing);
@@ -188,7 +202,7 @@ public class StatWorld {
             boolean throttleTriggered = false;
             boolean globalThrottle = false;
             int uuidVersion = uuid.version();
-            
+
             // 1. Attempt API call
             try {
                 JsonObject wholeObject = new HypixelAPI().getWholeObject(playerUUID);
@@ -204,7 +218,7 @@ public class StatWorld {
                         new Skywars(playerName, playerUUID, wholeObject)
                 );
                 apiSuccess = true;
-                
+
             } catch (ApiThrottleException ex) {
                 apiSuccess = false;
                 apiException = ex;
@@ -214,7 +228,7 @@ public class StatWorld {
                 apiSuccess = false;
                 apiException = ex;
             }
-            
+
             // 2. Determine nick status purely from UUID version (v1 = nicked)
             boolean isNicked = NickDetector.isNickedUuid(playerUUID);
 
@@ -225,7 +239,7 @@ public class StatWorld {
                 cachePlayer(uuid, hPlayer);
                 return;
             }
-            
+
             if (isNicked) {
                 // Nicked player (UUID v1) - no API data expected, mark as nicked and cache
                 hPlayer.setNicked(true);
@@ -241,12 +255,12 @@ public class StatWorld {
                         long delay = baseDelay * Math.max(1, apiRetryAttempt + 1);
                         Handler.asExecutor(() -> {
                             if (!ModConfig.getInstance().isModEnabled()) {
-                                this.statAssembly.remove(entityPlayer.getUniqueID());
+                                this.statAssembly.remove(uuid);
                                 return;
                             }
                             try {
                                 Thread.sleep(delay);
-                                fetchStatsWithRetry(entityPlayer, apiRetryAttempt + 1);
+                                fetchStatsWithRetry(uuid, playerName, displayComponent, apiRetryAttempt + 1);
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
                             }
@@ -267,18 +281,18 @@ public class StatWorld {
                     this.removeFromStatAssembly(uuid);
                     return;
                 }
-                
+
                 // Real UUID (v4 or v2) but API failed - use exponential backoff for API issues
                 if (apiRetryAttempt < 8) { // 0-7 = 8 attempts total
                     // Schedule retry with exponential backoff
                     Handler.asExecutor(() -> {
                         if (!ModConfig.getInstance().isModEnabled()) {
-                            this.statAssembly.remove(entityPlayer.getUniqueID());
+                            this.statAssembly.remove(uuid);
                             return;
                         }
                         try {
                             Thread.sleep(apiRetryAttempt == 0 ? 0 : Math.round(250 * Math.pow(2, apiRetryAttempt - 1)));
-                            fetchStatsWithRetry(entityPlayer, apiRetryAttempt + 1);
+                            fetchStatsWithRetry(uuid, playerName, displayComponent, apiRetryAttempt + 1);
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
                         }
@@ -297,6 +311,130 @@ public class StatWorld {
             hPlayer.setNicked(false);
             cachePlayer(uuid, hPlayer);
         });
+    }
+
+    /**
+     * A name showed up in chat. Resolves it to a UUID and pulls the stats in, so the player can be
+     * drawn in the tab list even though a pre-game lobby gives them no tab entry of their own.
+     */
+    public void revealFromChat(String name) {
+        ModConfig config = ModConfig.getInstance();
+        if (name == null || !config.isModEnabled() || !config.isChatRevealEnabled()) {
+            return;
+        }
+
+        String trimmed = name.trim();
+        if (trimmed.isEmpty()) {
+            return;
+        }
+
+        String key = trimmed.toLowerCase(Locale.ROOT);
+        if (this.chatRevealed.containsKey(key)) {
+            return;
+        }
+
+        if (this.chatRevealed.size() >= MAX_CHAT_REVEALED) {
+            Debug.chatReveal("dropping " + trimmed + ": " + MAX_CHAT_REVEALED + " reveals is the cap");
+            return;
+        }
+
+        Debug.chatReveal("revealing " + trimmed);
+
+        /* Already fetched for some other reason - they have an entity, or they chatted before. */
+        HPlayer known = getPlayerByName(trimmed);
+        if (known != null) {
+            UUID knownUuid = parseUuid(known.getPlayerUUID());
+            if (knownUuid != null) {
+                this.chatRevealed.put(key, new ChatRevealedPlayer(knownUuid, known.getPlayerName(), !known.isNicked()));
+                Debug.chatReveal(trimmed + ": stats were already cached");
+            }
+            return;
+        }
+
+        if (!this.chatLookupsInFlight.add(key)) {
+            return;
+        }
+
+        Handler.asExecutor(() -> {
+            try {
+                MojangAPI.Profile profile = new MojangAPI().lookupProfile(trimmed);
+                if (profile == null) {
+                    // Lookup itself failed - the next message from them tries again
+                    Debug.chatReveal(trimmed + ": name lookup failed, will retry on their next message");
+                    return;
+                }
+
+                if (!profile.exists()) {
+                    /*
+                     * No Mojang account behind the name: on Hypixel that means a nick. Kept out of
+                     * the player cache on purpose - the placeholder UUID is not a real identity,
+                     * and an alias under it would label the real tab entry of that name too.
+                     */
+                    UUID placeholder = UUID.nameUUIDFromBytes(("TabStatsNick:" + key).getBytes(StandardCharsets.UTF_8));
+                    this.chatRevealed.put(key, new ChatRevealedPlayer(placeholder, trimmed, false));
+                    Debug.chatReveal(trimmed + ": no such Mojang account, showing them as nicked");
+                    return;
+                }
+
+                UUID uuid = profile.getUuid();
+                this.chatRevealed.put(key, new ChatRevealedPlayer(uuid, profile.getName(), true));
+                Debug.chatReveal(profile.getName() + ": resolved to " + uuid + ", fetching stats");
+
+                if (getPlayerByUUID(uuid) == null && this.statAssembly.add(uuid)) {
+                    fetchStatsWithRetry(uuid, profile.getName(), null, 0);
+                }
+            } finally {
+                this.chatLookupsInFlight.remove(key);
+            }
+        });
+    }
+
+    /** Drops a chat reveal again, for when the server announces that the player left. */
+    public void hideFromChat(String name) {
+        if (name == null) {
+            return;
+        }
+
+        if (this.chatRevealed.remove(name.trim().toLowerCase(Locale.ROOT)) != null) {
+            Debug.chatReveal(name.trim() + " left the lobby, dropping the reveal");
+        }
+    }
+
+    public List<ChatRevealedPlayer> getChatRevealedPlayers() {
+        synchronized (this.chatRevealed) {
+            return new ArrayList<>(this.chatRevealed.values());
+        }
+    }
+
+    public void clearChatRevealed() {
+        this.chatRevealed.clear();
+        this.chatLookupsInFlight.clear();
+    }
+
+    protected Set<UUID> getChatRevealedUuids() {
+        Set<UUID> uuids = new HashSet<>();
+        for (ChatRevealedPlayer player : getChatRevealedPlayers()) {
+            uuids.add(player.getUuid());
+        }
+        return uuids;
+    }
+
+    private static UUID parseUuid(String raw) {
+        if (raw == null) {
+            return null;
+        }
+
+        String value = raw.replace("-", "");
+        if (value.length() != 32) {
+            return null;
+        }
+
+        try {
+            return UUID.fromString(value.substring(0, 8) + "-" + value.substring(8, 12) + "-"
+                    + value.substring(12, 16) + "-" + value.substring(16, 20) + "-" + value.substring(20));
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     // Skin hash extraction removed – no longer needed for nick detection

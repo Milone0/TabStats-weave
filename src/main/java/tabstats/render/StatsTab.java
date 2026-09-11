@@ -1,6 +1,8 @@
 package tabstats.render;
 
 import tabstats.TabStats;
+import tabstats.config.ModConfig;
+import tabstats.playerapi.ChatRevealedPlayer;
 import tabstats.playerapi.HPlayer;
 import tabstats.playerapi.StatWorld;
 import tabstats.listener.GameOverlayListener;
@@ -37,7 +39,12 @@ import org.lwjgl.opengl.GL11;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -63,6 +70,8 @@ public class StatsTab extends GuiPlayerTabOverlay {
     private int maxVisiblePlayers = 0;
     private final float scrollSpeed = 0.2f; // Animation smoothness factor
     private int lastPlayerListSize = 0;
+    /** Tab entries the mod makes up for players that only chat revealed, keyed by their UUID. */
+    private final Map<UUID, NetworkPlayerInfo> syntheticInfos = new HashMap<>();
 
     public StatsTab(Minecraft mcIn, GuiIngame guiIngameIn) {
         super(mcIn, guiIngameIn);
@@ -163,6 +172,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
         NetHandlerPlayClient netHandler = this.mc.thePlayer.sendQueue;
         StatWorld statWorld = TabStats.getTabStats().getStatWorld();
         List<NetworkPlayerInfo> playerList = collectEligiblePlayers(netHandler, statWorld);
+        Map<UUID, ChatRevealedPlayer> chatRows = appendChatRevealed(playerList, statWorld);
 
         ScaledResolution scaledRes = new ScaledResolution(this.mc);
         int baseY = 20;
@@ -254,8 +264,11 @@ public class StatsTab extends GuiPlayerTabOverlay {
 
             String name = this.getPlayerName(playerInfo);
             GameProfile gameProfile = playerInfo.getGameProfile();
+            ChatRevealedPlayer chatRow = chatRows.get(gameProfile.getId());
+            /* A nicked player's UUID is a local placeholder, so no skin can be loaded for it. */
+            boolean hasSkin = chatRow == null || chatRow.hasRealProfile();
 
-            if ((this.mc.isIntegratedServerRunning() || this.mc.getNetHandler().getNetworkManager().getIsencrypted()) && playerInfo.getLocationSkin() != null) {
+            if (hasSkin && (this.mc.isIntegratedServerRunning() || this.mc.getNetHandler().getNetworkManager().getIsencrypted()) && playerInfo.getLocationSkin() != null) {
                 EntityPlayer entityPlayer = this.mc.theWorld.getPlayerEntityByUUID(gameProfile.getId());
                 boolean upsideDown = entityPlayer != null && entityPlayer.isWearing(EnumPlayerModelParts.CAPE) && ("Dinnerbone".equals(gameProfile.getName()) || "Grumm".equals(gameProfile.getName()));
                 this.mc.getTextureManager().bindTexture(playerInfo.getLocationSkin());
@@ -296,10 +309,15 @@ public class StatsTab extends GuiPlayerTabOverlay {
                     }
                 }
 
+                if (chatRow != null) {
+                    name = formatChatRevealedName(hPlayer, chatRow);
+                }
+
                 this.mc.fontRendererObj.drawStringWithShadow(name, xSpacer, ySpacer + textBaselineOffset, -1);
             }
 
-            if (scoreObjectiveIn != null && playerInfo.getGameType() != WorldSettings.GameType.SPECTATOR) {
+            /* Chat-revealed players are not on the scoreboard, so there is nothing to draw for them. */
+            if (scoreObjectiveIn != null && chatRow == null && playerInfo.getGameType() != WorldSettings.GameType.SPECTATOR) {
                 this.drawScoreboardValues(scoreObjectiveIn, ySpacer, gameProfile.getName(), xSpacer, startingX - 5, playerInfo);
             }
 
@@ -429,6 +447,100 @@ public class StatsTab extends GuiPlayerTabOverlay {
 
     private int measureColumnWidth(Stat stat) {
         return this.mc.fontRendererObj.getStringWidth(formatStatLabel(stat)) + 10;
+    }
+
+    /**
+     * Appends a row for every player that is only known from chat. A pre-game lobby hides who is
+     * in it, so a name written in chat is the only thing that puts that player on the list - which
+     * is the point: their stats are visible while leaving the lobby is still an option.
+     *
+     * @return the appended rows keyed by UUID, so the draw loop can tell them apart from real
+     *         tab entries
+     */
+    private Map<UUID, ChatRevealedPlayer> appendChatRevealed(List<NetworkPlayerInfo> playerList, StatWorld statWorld) {
+        if (statWorld == null || !ModConfig.getInstance().isChatRevealEnabled()) {
+            this.syntheticInfos.clear();
+            return Collections.emptyMap();
+        }
+
+        List<ChatRevealedPlayer> revealed = statWorld.getChatRevealedPlayers();
+        if (revealed.isEmpty()) {
+            this.syntheticInfos.clear();
+            return Collections.emptyMap();
+        }
+
+        Set<UUID> presentIds = new HashSet<>();
+        Set<String> presentNames = new HashSet<>();
+        for (NetworkPlayerInfo info : playerList) {
+            GameProfile profile = info.getGameProfile();
+            if (profile == null) {
+                continue;
+            }
+
+            if (profile.getId() != null) {
+                presentIds.add(profile.getId());
+            }
+
+            if (profile.getName() != null) {
+                presentNames.add(profile.getName().toLowerCase(Locale.ROOT));
+            }
+        }
+
+        Map<UUID, ChatRevealedPlayer> rows = new HashMap<>();
+        for (ChatRevealedPlayer player : revealed) {
+            UUID uuid = player.getUuid();
+            String playerName = player.getName();
+            if (uuid == null || playerName == null) {
+                continue;
+            }
+
+            /*
+             * The server lists them itself now, so it has stopped hiding them - which is what
+             * happens the moment the game starts. Retire the reveal and let their own tab entry,
+             * drawn above with the server's formatting, take over.
+             */
+            if (presentIds.contains(uuid) || presentNames.contains(playerName.toLowerCase(Locale.ROOT))) {
+                statWorld.hideFromChat(playerName);
+                continue;
+            }
+
+            playerList.add(syntheticInfo(uuid, playerName));
+            rows.put(uuid, player);
+        }
+
+        this.syntheticInfos.keySet().retainAll(rows.keySet());
+        return rows;
+    }
+
+    private NetworkPlayerInfo syntheticInfo(UUID uuid, String name) {
+        NetworkPlayerInfo info = this.syntheticInfos.get(uuid);
+        if (info == null) {
+            info = new NetworkPlayerInfo(new GameProfile(uuid, name));
+            this.syntheticInfos.put(uuid, info);
+        }
+
+        return info;
+    }
+
+    /**
+     * Chat-revealed players have no tab entry and therefore no team prefix to preserve, so their
+     * name is drawn from the API rank instead.
+     */
+    private String formatChatRevealedName(HPlayer hPlayer, ChatRevealedPlayer row) {
+        if (!row.hasRealProfile()) {
+            /* Nobody owns that name, so there are no stats to wait for either. */
+            return ChatColor.WHITE + "[" + ChatColor.RED + "NICKED" + ChatColor.WHITE + "] "
+                    + ChatColor.WHITE + row.getName();
+        }
+
+        if (hPlayer == null) {
+            /* Stats are still on their way in. */
+            return ChatColor.GRAY + row.getName();
+        }
+
+        String rank = hPlayer.getPlayerRank();
+        String playerName = hPlayer.getPlayerName() != null ? hPlayer.getPlayerName() : row.getName();
+        return (rank == null ? "" : rank) + playerName;
     }
 
     private List<NetworkPlayerInfo> collectEligiblePlayers(NetHandlerPlayClient netHandler, StatWorld statWorld) {

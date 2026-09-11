@@ -85,7 +85,11 @@ and not to your other versions.
 - `/tabstats` (or `/ts`) opens the menu — paste your Hypixel key and save
 - join a Bedwars, Duels or Skywars lobby and hold Tab
 - scroll with the mouse wheel while Tab is held
-- the menu also toggles the mod and the header/footer
+- in a pre-game lobby, every player that writes something in chat is added to the tab list
+  with their stats, even though the lobby gives them no tab entry — enough to decide
+  whether to skip the lobby before it starts. Those rows disappear again once the game
+  begins, or when the player leaves
+- the menu also toggles the mod, the header/footer, and the pre-lobby chat names
 - optional: an [Urchin](https://urchin.ws) key adds cheater tags, Bedwars only.
   Without one that column is just a grey `-`
 
