@@ -22,7 +22,7 @@ public class ChatListener {
     @SubscribeEvent
     public void onChatReceived(ChatEvent.Received event) {
         ModConfig config = ModConfig.getInstance();
-        if (!config.isModEnabled() || !config.isChatRevealEnabled()) {
+        if (!config.isModEnabled()) {
             return;
         }
 

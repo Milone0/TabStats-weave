@@ -12,7 +12,6 @@ import java.io.Writer;
 import java.util.LinkedHashMap;
 
 import static tabstats.config.ModConfigNames.APIKEY;
-import static tabstats.config.ModConfigNames.CHAT_REVEAL;
 import static tabstats.config.ModConfigNames.CHAT_REVEAL_DEBUG;
 import static tabstats.config.ModConfigNames.RENDER_HEADER_FOOTER;
 import static tabstats.config.ModConfigNames.MOD_ENABLED;
@@ -28,7 +27,6 @@ public class ModConfig {
     private File configFile;
     private boolean renderHeaderFooter = true;
     private boolean modEnabled = true;
-    private boolean chatReveal = true;
     private boolean chatRevealDebug = true;
     private long configLastLoaded = -1L;
 
@@ -90,14 +88,6 @@ public class ModConfig {
 
     public boolean isModEnabled() {
         return this.modEnabled;
-    }
-
-    public boolean isChatRevealEnabled() {
-        return this.chatReveal;
-    }
-
-    public void setChatRevealEnabled(boolean value) {
-        this.chatReveal = value;
     }
 
     /**
@@ -170,7 +160,6 @@ public class ModConfig {
                 JsonObject defaults = new JsonObject();
                 defaults.addProperty(MOD_ENABLED.toString(), true);
                 defaults.addProperty(RENDER_HEADER_FOOTER.toString(), true);
-                defaults.addProperty(CHAT_REVEAL.toString(), true);
                 defaults.addProperty(CHAT_REVEAL_DEBUG.toString(), true);
                 defaults.addProperty(APIKEY.toString(), "");
                 defaults.addProperty(URCHIN_API_KEY.toString(), "");
@@ -195,7 +184,6 @@ public class ModConfig {
         lastUrchinApiKey = urchinApiKey;
         renderHeaderFooter = getBoolean(RENDER_HEADER_FOOTER, true);
         modEnabled = getBoolean(MOD_ENABLED, true);
-        chatReveal = getBoolean(CHAT_REVEAL, true);
         chatRevealDebug = getBoolean(CHAT_REVEAL_DEBUG, true);
         configLastLoaded = getFile().lastModified();
     }
@@ -235,7 +223,6 @@ public class ModConfig {
         LinkedHashMap<String, Object> map = new LinkedHashMap<>();
         map.put(MOD_ENABLED.toString(), this.modEnabled);
         map.put(RENDER_HEADER_FOOTER.toString(), this.renderHeaderFooter);
-        map.put(CHAT_REVEAL.toString(), this.chatReveal);
         map.put(CHAT_REVEAL_DEBUG.toString(), this.chatRevealDebug);
         map.put(APIKEY.toString(), this.apiKey == null ? "" : this.apiKey); // Use the internal field, not getApiKey()
         map.put(URCHIN_API_KEY.toString(), this.urchinApiKey == null ? "" : this.urchinApiKey);
