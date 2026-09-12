@@ -1,11 +1,11 @@
 # TabStats (Weave port)
 
-Hypixel stats directly in your 1.8.9 tablist — Bedwars, Duels and Skywars.
+Hypixel stats directly in your 1.8.9 tablist: Bedwars, Duels and Skywars.
 
 This is a port of [DirectivesMods/TabStats](https://github.com/DirectivesMods/TabStats)
 from Forge to [Weave Loader](https://github.com/Weave-MC/Weave-Loader), so that it runs on
 **Lunar Client 1.8.9**. Upstream closes its README with *"This does not work on Lunar - if
-someone wants to port it to Weave you may."* — this is that port.
+someone wants to port it to Weave you may."* - this is that port.
 
 On plain Forge 1.8.9, use upstream instead. Nothing here improves on it.
 
