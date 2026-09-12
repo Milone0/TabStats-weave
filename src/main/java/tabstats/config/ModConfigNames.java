@@ -4,8 +4,8 @@ public enum ModConfigNames {
     APIKEY("ApiKey"),
     RENDER_HEADER_FOOTER("RenderHeaderFooter"),
     MOD_ENABLED("ModEnabled"),
-    CHAT_REVEAL_DEBUG("ChatRevealDebug"),
-    URCHIN_API_KEY("UrchinApiKey");
+    URCHIN_API_KEY("UrchinApiKey"),
+    STAT_COLUMNS("StatColumns");
 
     private final String name;
 
