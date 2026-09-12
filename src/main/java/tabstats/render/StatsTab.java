@@ -458,7 +458,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
      *         tab entries
      */
     private Map<UUID, ChatRevealedPlayer> appendChatRevealed(List<NetworkPlayerInfo> playerList, StatWorld statWorld) {
-        if (statWorld == null || !ModConfig.getInstance().isChatRevealEnabled()) {
+        if (statWorld == null) {
             this.syntheticInfos.clear();
             return Collections.emptyMap();
         }
