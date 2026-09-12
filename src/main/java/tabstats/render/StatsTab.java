@@ -727,7 +727,9 @@ public class StatsTab extends GuiPlayerTabOverlay {
             ScorePlayerTeam team = playerInfo.getPlayerTeam();
             String teamPrefix = team != null ? team.getColorPrefix() : "";
             String teamSuffix = team != null ? team.getColorSuffix() : "";
-            return teamPrefix + ChatColor.WHITE + "[" + ChatColor.RED + "NICKED" + ChatColor.WHITE + "] " + ChatColor.WHITE + playerInfo.getGameProfile().getName() + teamSuffix;
+            /* The tag stays white, but the nick itself keeps the team color so teams stay readable. */
+            String nameColor = teamPrefix.isEmpty() ? ChatColor.WHITE.toString() : teamPrefix;
+            return ChatColor.WHITE + "[" + ChatColor.RED + "NICKED" + ChatColor.WHITE + "] " + nameColor + playerInfo.getGameProfile().getName() + teamSuffix;
         }
 
         /* Everyone else is drawn with the server's own formatting, so the team colors stay intact. */
