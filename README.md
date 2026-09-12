@@ -25,7 +25,7 @@ See [TECHNICAL.md](TECHNICAL.md).
 
 ## Get the jar
 
-Download `TabStats-1.3.0.jar` from the
+Download `TabStats-1.3.0-weave.1.jar` from the
 [latest release](https://github.com/Milone0/TabStats-weave/releases/latest). That is all
 most people need — continue at [Install](#install).
 
@@ -38,7 +38,7 @@ cd TabStats-weave
 ```
 
 The first run downloads Gradle, the Weave artifacts and the Minecraft libraries, and
-remaps the vanilla jar — expect a few minutes. Result: `build/libs/TabStats-1.3.0.jar`.
+remaps the vanilla jar — expect a few minutes. Result: `build/libs/TabStats-1.3.0-weave.1.jar`.
 
 If `java` is not on your `PATH`, point Gradle at a JDK explicitly:
 
