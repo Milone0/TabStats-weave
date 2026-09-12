@@ -2,6 +2,7 @@ package tabstats.config;
 
 import tabstats.util.Handler;
 import net.minecraft.client.Minecraft;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -12,8 +13,8 @@ import java.io.Writer;
 import java.util.LinkedHashMap;
 
 import static tabstats.config.ModConfigNames.APIKEY;
-import static tabstats.config.ModConfigNames.CHAT_REVEAL_DEBUG;
 import static tabstats.config.ModConfigNames.RENDER_HEADER_FOOTER;
+import static tabstats.config.ModConfigNames.STAT_COLUMNS;
 import static tabstats.config.ModConfigNames.MOD_ENABLED;
 import static tabstats.config.ModConfigNames.URCHIN_API_KEY;
 
@@ -27,7 +28,7 @@ public class ModConfig {
     private File configFile;
     private boolean renderHeaderFooter = true;
     private boolean modEnabled = true;
-    private boolean chatRevealDebug = true;
+    private final StatColumnLayout statColumns = new StatColumnLayout();
     private long configLastLoaded = -1L;
 
     public static ModConfig getInstance() {
@@ -90,17 +91,13 @@ public class ModConfig {
         return this.modEnabled;
     }
 
-    /**
-     * Prints what happens to each name seen in chat to the game log. On while the feature is
-     * still being shaken out on real lobbies; set "ChatRevealDebug" to false in config.json to
-     * silence it.
-     */
-    public boolean isChatRevealDebugEnabled() {
-        return this.chatRevealDebug;
-    }
-
     public void setModEnabled(boolean value) {
         this.modEnabled = value;
+    }
+
+    /** Which stat columns the tab draws, and in what order. Edited through the /tabstats GUI. */
+    public StatColumnLayout getStatColumns() {
+        return this.statColumns;
     }
 
     private void reloadKeysFromDiskIfNeeded() {
@@ -160,9 +157,9 @@ public class ModConfig {
                 JsonObject defaults = new JsonObject();
                 defaults.addProperty(MOD_ENABLED.toString(), true);
                 defaults.addProperty(RENDER_HEADER_FOOTER.toString(), true);
-                defaults.addProperty(CHAT_REVEAL_DEBUG.toString(), true);
                 defaults.addProperty(APIKEY.toString(), "");
                 defaults.addProperty(URCHIN_API_KEY.toString(), "");
+                defaults.add(STAT_COLUMNS.toString(), Handler.getGson().toJsonTree(this.statColumns.toSerializable()));
 
                 try (FileWriter writer = new FileWriter(file)) {
                     Handler.getGson().toJson(defaults, writer);
@@ -184,7 +181,7 @@ public class ModConfig {
         lastUrchinApiKey = urchinApiKey;
         renderHeaderFooter = getBoolean(RENDER_HEADER_FOOTER, true);
         modEnabled = getBoolean(MOD_ENABLED, true);
-        chatRevealDebug = getBoolean(CHAT_REVEAL_DEBUG, true);
+        statColumns.loadFrom(getJsonObject(STAT_COLUMNS));
         configLastLoaded = getFile().lastModified();
     }
 
@@ -223,9 +220,9 @@ public class ModConfig {
         LinkedHashMap<String, Object> map = new LinkedHashMap<>();
         map.put(MOD_ENABLED.toString(), this.modEnabled);
         map.put(RENDER_HEADER_FOOTER.toString(), this.renderHeaderFooter);
-        map.put(CHAT_REVEAL_DEBUG.toString(), this.chatRevealDebug);
         map.put(APIKEY.toString(), this.apiKey == null ? "" : this.apiKey); // Use the internal field, not getApiKey()
         map.put(URCHIN_API_KEY.toString(), this.urchinApiKey == null ? "" : this.urchinApiKey);
+        map.put(STAT_COLUMNS.toString(), this.statColumns.toSerializable());
         File file = getFile();
         try (Writer writer = new FileWriter(file)) {
             Handler.getGson().toJson(map, writer);
@@ -251,6 +248,26 @@ public class ModConfig {
         } catch (Exception ex) {
             // Silently handle read errors
             return "";
+        }
+    }
+
+    public JsonObject getJsonObject(ModConfigNames key) {
+        File file = getFile();
+        if (!file.exists()) {
+            return null;
+        }
+
+        try (FileReader reader = new FileReader(file)) {
+            JsonObject object = new JsonParser().parse(reader).getAsJsonObject();
+            if (!object.has(key.toString())) {
+                return null;
+            }
+
+            JsonElement element = object.get(key.toString());
+            return element != null && element.isJsonObject() ? element.getAsJsonObject() : null;
+        } catch (Exception ex) {
+            // Silently handle read errors
+            return null;
         }
     }
 

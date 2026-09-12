@@ -223,6 +223,22 @@ permits writing non-static final fields through reflection once access is grante
 Note the width argument from vanilla is ignored; the mod computes a wider one to fit the
 stat columns, exactly as the Forge build did.
 
+### Which stat columns are drawn
+
+The game classes (`Bedwars`, `Skywars`, `Duels`) always build their full stat list. What the
+tab actually shows is decided one step later by `StatColumnLayout`, which reorders that list
+and drops the columns switched off in `/tabstats` -> *Stat Columns...*. It has to be applied in
+**both** places that touch stats, or headers and values drift apart:
+
+- `GameOverlayListener.renderTab` — the local player's list, which supplies the header labels
+  and the column widths;
+- `StatsTab.resolveStats` — every other row.
+
+Columns are matched by stat name, trimmed and upper-cased, because DUELS pads `"TITLE"` with
+trailing spaces to widen its column. A stat the layout has no entry for is appended rather than
+dropped, so a column added in a later version shows up instead of silently disappearing. The
+order is stored per gamemode under `StatColumns` in `config.json`.
+
 ### Players a pre-game lobby hides
 
 A pre-game lobby gives away nobody: no usable tab entry, no named entity. The one moment a
@@ -257,10 +273,6 @@ tags stripped, has to collapse to exactly one token that is a valid username and
 the labels in `NON_PLAYER_LABELS`. A stray label that is not on that list costs one bogus row
 and two API calls, which is the right way round — the failure that matters is revealing
 nobody.
-
-`ChatRevealDebug` in `config.json` (on by default for now) traces what happens to every name
-seen in chat to the game log, which is the only way to tell these formats apart without
-sitting in a lobby.
 
 Reveals are retired three ways, because a pre-game lobby does not always sit on its own
 world and the game starting is therefore not always a world change:
