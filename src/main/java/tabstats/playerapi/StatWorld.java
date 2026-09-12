@@ -12,7 +12,6 @@ import tabstats.playerapi.exception.BadJsonException;
 import tabstats.playerapi.exception.InvalidKeyException;
 import tabstats.playerapi.exception.PlayerNullException;
 import tabstats.util.ChatColor;
-import tabstats.util.Debug;
 import tabstats.util.Handler;
 import tabstats.util.NickDetector;
 import com.google.gson.JsonObject;
@@ -334,11 +333,8 @@ public class StatWorld {
         }
 
         if (this.chatRevealed.size() >= MAX_CHAT_REVEALED) {
-            Debug.chatReveal("dropping " + trimmed + ": " + MAX_CHAT_REVEALED + " reveals is the cap");
             return;
         }
-
-        Debug.chatReveal("revealing " + trimmed);
 
         /* Already fetched for some other reason - they have an entity, or they chatted before. */
         HPlayer known = getPlayerByName(trimmed);
@@ -346,7 +342,6 @@ public class StatWorld {
             UUID knownUuid = parseUuid(known.getPlayerUUID());
             if (knownUuid != null) {
                 this.chatRevealed.put(key, new ChatRevealedPlayer(knownUuid, known.getPlayerName(), !known.isNicked()));
-                Debug.chatReveal(trimmed + ": stats were already cached");
             }
             return;
         }
@@ -360,7 +355,6 @@ public class StatWorld {
                 MojangAPI.Profile profile = new MojangAPI().lookupProfile(trimmed);
                 if (profile == null) {
                     // Lookup itself failed - the next message from them tries again
-                    Debug.chatReveal(trimmed + ": name lookup failed, will retry on their next message");
                     return;
                 }
 
@@ -372,13 +366,11 @@ public class StatWorld {
                      */
                     UUID placeholder = UUID.nameUUIDFromBytes(("TabStatsNick:" + key).getBytes(StandardCharsets.UTF_8));
                     this.chatRevealed.put(key, new ChatRevealedPlayer(placeholder, trimmed, false));
-                    Debug.chatReveal(trimmed + ": no such Mojang account, showing them as nicked");
                     return;
                 }
 
                 UUID uuid = profile.getUuid();
                 this.chatRevealed.put(key, new ChatRevealedPlayer(uuid, profile.getName(), true));
-                Debug.chatReveal(profile.getName() + ": resolved to " + uuid + ", fetching stats");
 
                 if (getPlayerByUUID(uuid) == null && this.statAssembly.add(uuid)) {
                     fetchStatsWithRetry(uuid, profile.getName(), null, 0);
@@ -395,9 +387,7 @@ public class StatWorld {
             return;
         }
 
-        if (this.chatRevealed.remove(name.trim().toLowerCase(Locale.ROOT)) != null) {
-            Debug.chatReveal(name.trim() + " left the lobby, dropping the reveal");
-        }
+        this.chatRevealed.remove(name.trim().toLowerCase(Locale.ROOT));
     }
 
     public List<ChatRevealedPlayer> getChatRevealedPlayers() {

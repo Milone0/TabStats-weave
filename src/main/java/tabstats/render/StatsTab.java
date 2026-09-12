@@ -414,12 +414,18 @@ public class StatsTab extends GuiPlayerTabOverlay {
             return Collections.emptyList();
         }
 
+        String layoutGamemode = gamemode;
         List<Stat> stats = player.getFormattedGameStats(gamemode);
         if (stats == null || stats.isEmpty()) {
             stats = player.getFormattedGameStats("BEDWARS");
+            layoutGamemode = "BEDWARS";
         }
 
-        return stats == null ? Collections.emptyList() : stats;
+        if (stats == null || stats.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return ModConfig.getInstance().getStatColumns().apply(stats, layoutGamemode);
     }
 
     private String formatStatValue(Stat stat) {

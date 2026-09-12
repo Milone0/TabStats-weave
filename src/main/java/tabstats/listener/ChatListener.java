@@ -10,7 +10,6 @@ import tabstats.TabStats;
 import tabstats.config.ModConfig;
 import tabstats.playerapi.WorldLoader;
 import tabstats.util.ChatNameParser;
-import tabstats.util.Debug;
 import tabstats.util.Gamemodes;
 
 /**
@@ -44,7 +43,6 @@ public class ChatListener {
 
         /* Dropping names is never gated - the lobby they belong to is gone either way. */
         if (reveal.getKind() == ChatNameParser.Kind.CLEAR) {
-            Debug.chatReveal("game boundary in chat, dropping every reveal");
             statWorld.clearChatRevealed();
             return;
         }
@@ -62,12 +60,10 @@ public class ChatListener {
 
         /* The server lists them itself, so there is nothing left to uncover. */
         if (listedInTab(name)) {
-            Debug.chatReveal("skipping " + name + ": already in the tab list");
             return;
         }
 
         if (Gamemodes.resolveCurrent() == null) {
-            Debug.chatReveal("skipping " + name + ": no supported game on the scoreboard");
             return;
         }
 

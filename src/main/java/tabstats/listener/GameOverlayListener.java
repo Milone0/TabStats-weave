@@ -100,7 +100,8 @@ public class GameOverlayListener {
             if (stats == null) {
                 gameStatTitleList = new ArrayList<>();
             } else {
-                gameStatTitleList = stats;
+                // Same layout the per-player rows go through, so headers and values stay aligned.
+                gameStatTitleList = ModConfig.getInstance().getStatColumns().apply(stats, gamemode);
             }
         }
 
