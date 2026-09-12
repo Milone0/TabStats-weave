@@ -319,7 +319,7 @@ public class StatWorld {
      */
     public void revealFromChat(String name) {
         ModConfig config = ModConfig.getInstance();
-        if (name == null || !config.isModEnabled() || !config.isChatRevealEnabled()) {
+        if (name == null || !config.isModEnabled()) {
             return;
         }
 

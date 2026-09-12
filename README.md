@@ -89,7 +89,7 @@ and not to your other versions.
   with their stats, even though the lobby gives them no tab entry — enough to decide
   whether to skip the lobby before it starts. Those rows disappear again once the game
   begins, or when the player leaves
-- the menu also toggles the mod, the header/footer, and the pre-lobby chat names
+- the menu also toggles the mod and the header/footer
 - optional: an [Urchin](https://urchin.ws) key adds cheater tags, Bedwars only.
   Without one that column is just a grey `-`
 

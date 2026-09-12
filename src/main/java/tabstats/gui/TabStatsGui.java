@@ -12,7 +12,6 @@ import net.minecraft.client.gui.GuiScreen;
 public class TabStatsGui extends GuiScreen {
     private GuiButton headerFooterButton;
     private GuiButton modToggleButton;
-    private GuiButton chatRevealButton;
     private int titleY;
 
     @Override
@@ -27,7 +26,6 @@ public class TabStatsGui extends GuiScreen {
         int toggleX = centerX - singleButtonWidth / 2;
         int modToggleY = this.titleY + rowSpacing;
         int headerToggleY = modToggleY + rowSpacing;
-        int chatRevealY = headerToggleY + rowSpacing;
 
         ModConfig cfg = ModConfig.getInstance();
 
@@ -37,14 +35,11 @@ public class TabStatsGui extends GuiScreen {
         this.headerFooterButton = new GuiButton(5, toggleX, headerToggleY, singleButtonWidth, buttonHeight, formatHeaderFooterLabel(cfg.isRenderHeaderFooterEnabled()));
         this.buttonList.add(this.headerFooterButton);
 
-        this.chatRevealButton = new GuiButton(9, toggleX, chatRevealY, singleButtonWidth, buttonHeight, formatChatRevealLabel(cfg.isChatRevealEnabled()));
-        this.buttonList.add(this.chatRevealButton);
-
         int halfWidth = 98;
         int buttonSpacing = 4;
         int apiRowWidth = halfWidth * 2 + buttonSpacing;
         int apiStartX = centerX - apiRowWidth / 2;
-        int apiButtonY = chatRevealY + rowSpacing;
+        int apiButtonY = headerToggleY + rowSpacing;
 
         this.buttonList.add(new GuiButton(7, apiStartX, apiButtonY, halfWidth, buttonHeight, "Hypixel API"));
         this.buttonList.add(new GuiButton(8, apiStartX + halfWidth + buttonSpacing, apiButtonY, halfWidth, buttonHeight, "Urchin API"));
@@ -86,20 +81,6 @@ public class TabStatsGui extends GuiScreen {
                 instance.applyModEnabled(newValue);
             }
 
-        } else if (button.id == 9) {
-            boolean newValue = !cfg.isChatRevealEnabled();
-            cfg.setChatRevealEnabled(newValue);
-            cfg.save();
-
-            if (this.chatRevealButton != null) {
-                this.chatRevealButton.displayString = formatChatRevealLabel(newValue);
-            }
-
-            TabStats instance = TabStats.getTabStats();
-            if (!newValue && instance != null && instance.getStatWorld() != null) {
-                instance.getStatWorld().clearChatRevealed();
-            }
-
         } else if (button.id == 7) {
             Minecraft.getMinecraft().displayGuiScreen(new HypixelApiKeyGui(this));
         } else if (button.id == 8) {
@@ -125,10 +106,6 @@ public class TabStatsGui extends GuiScreen {
 
     private String formatHeaderFooterLabel(boolean enabled) {
         return "Header/Footer: " + (enabled ? ChatColor.GREEN + "Enabled" : ChatColor.RED + "Disabled");
-    }
-
-    private String formatChatRevealLabel(boolean enabled) {
-        return "Prelobby chat names: " + (enabled ? ChatColor.GREEN + "Enabled" : ChatColor.RED + "Disabled");
     }
 
     private String formatModToggleLabel(boolean enabled) {
