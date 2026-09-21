@@ -11,6 +11,7 @@ import tabstats.config.ModConfig;
 import tabstats.playerapi.WorldLoader;
 import tabstats.util.ChatNameParser;
 import tabstats.util.Gamemodes;
+import tabstats.util.HypixelLocation;
 
 /**
  * Feeds names written in chat into the stat world, so players that a pre-game lobby keeps hidden
@@ -20,13 +21,19 @@ public class ChatListener {
 
     @SubscribeEvent
     public void onChatReceived(ChatEvent.Received event) {
-        ModConfig config = ModConfig.getInstance();
-        if (!config.isModEnabled()) {
+        IChatComponent message = event.getMessage();
+        if (message == null) {
             return;
         }
 
-        IChatComponent message = event.getMessage();
-        if (message == null) {
+        /* The answer to the mod's own /locraw: consumed here, never shown to the player. */
+        if (HypixelLocation.handleChatMessage(message.getUnformattedText())) {
+            event.setCancelled(true);
+            return;
+        }
+
+        ModConfig config = ModConfig.getInstance();
+        if (!config.isModEnabled()) {
             return;
         }
 
@@ -63,7 +70,8 @@ public class ChatListener {
             return;
         }
 
-        if (Gamemodes.resolveCurrent() == null) {
+        /* A lobby chats far more than a game does, and none of it is worth an API call. */
+        if (!Gamemodes.inSupportedGame()) {
             return;
         }
 
