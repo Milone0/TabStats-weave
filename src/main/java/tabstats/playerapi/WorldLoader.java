@@ -7,7 +7,9 @@ import tabstats.TabStats;
 import tabstats.config.ModConfig;
 import tabstats.listener.GameOverlayListener;
 import tabstats.util.ChatColor;
+import tabstats.util.Gamemodes;
 import tabstats.util.Handler;
+import tabstats.util.HypixelLocation;
 import net.weavemc.api.event.SubscribeEvent;
 import net.weavemc.api.event.TickEvent;
 import net.minecraft.world.World;
@@ -82,6 +84,8 @@ public class WorldLoader extends StatWorld {
         if (currentWorld != lastObservedWorld) {
             lastObservedWorld = currentWorld;
             this.lastWorldJoinTime = System.currentTimeMillis();
+            // A new world is a new Hypixel server, so where we are has to be asked again.
+            HypixelLocation.reset();
             // Only reset scroll position on world change, preserve cache
             resetTabScroll();
             // Names picked up from chat belong to the lobby we just left
@@ -89,6 +93,17 @@ public class WorldLoader extends StatWorld {
         }
 
         if (mc.theWorld == null || mc.thePlayer == null) {
+            return;
+        }
+
+        HypixelLocation.tick();
+
+        /*
+         * Lobbies resolve to no gamemode. Nothing would be rendered there, so nothing is fetched
+         * either - a full lobby would otherwise burn a three-digit number of API calls for stats
+         * that never reach the screen.
+         */
+        if (!Gamemodes.inSupportedGame()) {
             return;
         }
 

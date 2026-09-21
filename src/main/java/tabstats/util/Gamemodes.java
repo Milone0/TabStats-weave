@@ -37,6 +37,19 @@ public final class Gamemodes {
         return null;
     }
 
+    /**
+     * Whether the client is somewhere the mod has anything to do: inside a supported game or the
+     * pre-game lobby that leads into it. Anywhere else - the main lobby, and just as importantly a
+     * game lobby, which titles its sidebar with the game name exactly like the game does - the mod
+     * stays out of the way instead of spending API calls on a crowd whose stats it never shows.
+     *
+     * <p>The sidebar title says which game; {@link HypixelLocation} says whether this is the game
+     * or the lobby in front of it.
+     */
+    public static boolean inSupportedGame() {
+        return resolveCurrent() != null && HypixelLocation.inGame();
+    }
+
     /** Same as {@link #resolve(Scoreboard)} for the scoreboard the client is looking at right now. */
     public static String resolveCurrent() {
         Minecraft mc = Minecraft.getMinecraft();

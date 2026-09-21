@@ -8,6 +8,7 @@ import tabstats.playerapi.api.stats.Stat;
 import tabstats.render.StatsTab;
 import tabstats.util.ChatColor;
 import tabstats.util.Gamemodes;
+import tabstats.util.HypixelLocation;
 import tabstats.util.Reflect;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiIngame;
@@ -61,7 +62,8 @@ public class GameOverlayListener {
 
         syncModEnabled();
 
-        if (this.modEnabled) {
+        /* Outside of games and pre-game lobbies the vanilla tab list stays in place. */
+        if (this.modEnabled && Gamemodes.inSupportedGame()) {
             ensureCustomOverlayInjected();
         } else {
             restoreOriginalOverlay();
@@ -87,13 +89,17 @@ public class GameOverlayListener {
 
         Scoreboard effectiveScoreboard = scoreboard != null ? scoreboard : this.mc.thePlayer.getWorldScoreboard();
         String gamemode = resolveGamemode(effectiveScoreboard);
-        boolean supportedGamemode = gamemode != null;
+
+        if (gamemode == null || !HypixelLocation.inGame()) {
+            // A lobby: the mod has no stats to draw here, so vanilla renders the list.
+            return false;
+        }
 
         StatWorld statWorld = TabStats.getTabStats().getStatWorld();
         HPlayer theHPlayer = statWorld == null ? null : statWorld.getPlayerByUUID(this.mc.thePlayer.getUniqueID());
 
         List<Stat> gameStatTitleList;
-        if (!supportedGamemode || theHPlayer == null) {
+        if (theHPlayer == null) {
             gameStatTitleList = Collections.emptyList();
         } else {
             List<Stat> stats = theHPlayer.getFormattedGameStats(gamemode);
@@ -110,7 +116,7 @@ public class GameOverlayListener {
                 ? scoreObjective
                 : (effectiveScoreboard == null ? null : effectiveScoreboard.getObjectiveInDisplaySlot(0));
 
-        this.statsTab.renderNewPlayerlist(width, effectiveScoreboard, effectiveObjective, gameStatTitleList, supportedGamemode ? gamemode : null);
+        this.statsTab.renderNewPlayerlist(width, effectiveScoreboard, effectiveObjective, gameStatTitleList, gamemode);
         return true;
     }
 
