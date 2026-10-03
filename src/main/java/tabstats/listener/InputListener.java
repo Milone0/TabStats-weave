@@ -28,10 +28,6 @@ public class InputListener {
             return;
         }
 
-        if (mc.getNetHandler() == null) {
-            return;
-        }
-
         GameOverlayListener overlayListener = TabStats.getTabStats().getGameOverlayListener();
         if (overlayListener == null) {
             return;
@@ -42,6 +38,9 @@ public class InputListener {
             return;
         }
 
-        statsTab.handleMouseWheel(event.getDWheel(), mc.getNetHandler().getPlayerInfoMap().size());
+        // A scroll that moved the list must not also switch the hotbar slot
+        if (statsTab.handleMouseWheel(event.getDWheel())) {
+            event.setCancelled(true);
+        }
     }
 }

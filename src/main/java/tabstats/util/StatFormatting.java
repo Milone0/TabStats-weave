@@ -3,7 +3,6 @@ package tabstats.util;
 import tabstats.config.ModConfig;
 import tabstats.playerapi.HPlayer;
 import tabstats.playerapi.api.stats.Stat;
-import tabstats.playerapi.api.stats.StatDouble;
 import tabstats.playerapi.api.stats.StatInt;
 import tabstats.playerapi.api.stats.StatString;
 
@@ -29,8 +28,6 @@ public final class StatFormatting {
         switch (stat.getType()) {
             case INT:
                 return Integer.toString(((StatInt) stat).getValue());
-            case DOUBLE:
-                return Double.toString(((StatDouble) stat).getValue());
             case STRING:
                 String value = ((StatString) stat).getValue();
                 return value == null ? "" : value;
@@ -39,10 +36,7 @@ public final class StatFormatting {
         }
     }
 
-    /**
-     * A stat name in the form everything matches on. Some names carry padding spaces to widen
-     * their tab column, so they are trimmed before comparing.
-     */
+    /** A stat name in the form everything matches on: trimmed and upper-cased. */
     public static String key(String statName) {
         return statName == null ? "" : statName.trim().toUpperCase(Locale.ROOT);
     }

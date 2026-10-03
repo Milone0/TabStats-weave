@@ -1,6 +1,5 @@
 package tabstats.util;
 
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public enum ChatColor {
@@ -47,47 +46,12 @@ public enum ChatColor {
         this.toString = new String(new char[]{COLOR_CHAR, code});
     }
 
-    public static String translateAlternateColorCodes(String textToTranslate) {
-        char[] b = textToTranslate.toCharArray();
-        for (int i = 0; i < b.length - 1; i++) {
-            if (b[i] == '&' && "0123456789AaBbCcDdEeFfKkLlMmNnOoRr".indexOf(b[i + 1]) > -1) {
-                b[i] = ChatColor.COLOR_CHAR;
-                b[i + 1] = Character.toLowerCase(b[i + 1]);
-            }
-        }
-        return new String(b);
-    }
-
     public static String stripColor(String input) {
         if (input == null) {
             return null;
         }
 
         return STRIP_COLOR_PATTERN.matcher(input).replaceAll("");
-    }
-
-    public static String getColor(String input) {
-        if (input == null) {
-            return null;
-        }
-
-        Matcher matcher = STRIP_COLOR_PATTERN.matcher(input);
-        if (matcher.find())
-            return matcher.group();
-
-        return null;
-    }
-
-    public static ChatColor getChatColor(String input) {
-        if (input == null)
-            return null;
-
-        for (ChatColor color : ChatColor.values()) {
-            if (Character.toString(color.code).equalsIgnoreCase(input))
-                return color;
-        }
-
-        return null;
     }
 
     @Override

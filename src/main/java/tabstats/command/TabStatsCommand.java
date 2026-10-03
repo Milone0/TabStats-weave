@@ -1,6 +1,8 @@
 package tabstats.command;
 
+import tabstats.TabStats;
 import tabstats.listener.GuiOpenListener;
+import tabstats.playerapi.StatWorld;
 import tabstats.util.ChatColor;
 import tabstats.util.Gamemodes;
 import tabstats.util.HypixelLocation;
@@ -42,5 +44,17 @@ public class TabStatsCommand extends Command {
                 + (Gamemodes.inSupportedGame() ? ChatColor.GREEN + "on" : ChatColor.RED + "off");
 
         mc.thePlayer.addChatMessage(new ChatComponentText(message));
+
+        /*
+         * Version 2 UUIDs are mostly NPCs on Hypixel, and each one costs an API call. If hardly
+         * any of them turn out to have stats, they are not worth looking up at all.
+         */
+        TabStats tabStats = TabStats.getTabStats();
+        StatWorld statWorld = tabStats == null ? null : tabStats.getStatWorld();
+        if (statWorld != null) {
+            mc.thePlayer.addChatMessage(new ChatComponentText(ChatColor.GOLD + "[TabStats] " + ChatColor.GRAY
+                    + "v2 UUID lookups: " + ChatColor.WHITE + statWorld.getV2Lookups()
+                    + ChatColor.GRAY + ", with stats: " + ChatColor.WHITE + statWorld.getV2Hits()));
+        }
     }
 }

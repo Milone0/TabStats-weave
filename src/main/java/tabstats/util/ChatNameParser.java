@@ -67,6 +67,11 @@ public final class ChatNameParser {
             return null;
         }
 
+        /* "[NPC] Dave: ..." is an NPC talking - looking the name up would find some real "Dave". */
+        if (stripped.startsWith("[NPC]")) {
+            return null;
+        }
+
         if (SEPARATOR_LINE.matcher(stripped.replaceAll("\\s+", "")).matches()) {
             return new Reveal(Kind.CLEAR, null);
         }

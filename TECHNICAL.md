@@ -165,7 +165,7 @@ Apache HttpClient and LWJGL. Only the Forge glue was replaced.
 | `listener/InputListener.java` | `MouseEvent.dwheel` → `MouseEvent.getDWheel()`; `mc` resolved per call instead of in a field | Kotlin `@get:JvmName`; field init would run too early |
 | `command/TabStatsCommand.java` | `CommandBase` → Weave `Command("tabstats", "ts")`, `processCommand` → `execute(String[])` | Weave command bus. Note `args[0]` is the command name itself |
 | `util/Reflect.java` | **new** — replaces Forge's `ReflectionHelper`, also used by `gui/MaskedGuiTextField` | that class ships with Forge and does not exist here |
-| `util/References.java` | Blossom `@ID@`/`@NAME@`/`@VERSION@` tokens → literals | the Blossom plugin was dropped |
+| `util/References.java` | Blossom `@ID@`/`@NAME@`/`@VERSION@` tokens → literals; later replaced by `util/BuildInfo`, which `build.gradle.kts` generates from `gradle.properties` | the Blossom plugin was dropped |
 | `gui/AbstractApiKeyGui.java`, `gui/TabStatsGui.java` | removed `throws IOException` from the `keyTyped` / `mouseClicked` overrides | see §6 |
 | `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties` | Essential Loom + Blossom + pack200 → `net.weavemc.gradle`; dropped `loom.platform`; deleted `mcmod.info` and `install.local.gradle.kts` | Loom builds Forge jars; the install script depended on Loom's `remapJar` |
 
@@ -376,7 +376,7 @@ This is the most likely source of future NPEs in this codebase.
 | `Could not find vanilla jar for version 1.8.9` | `%APPDATA%/.minecraft/versions/1.8.9/` | missing vanilla jar; or set `-Dweave.vanilla.jar.path=` |
 | Weave initialises, `/tabstats` unknown | game log for a `tabstats` stacktrace | entrypoint threw; most likely a too-early Minecraft access (§6) |
 | `/tabstats` works, Tab unchanged | whether `ensureCustomOverlayInjected` succeeded | the overlay field was not found or not written — check `Reflect.field` names |
-| Tab renders, all stats empty | `api.hypixel.net` reachable, key valid | API layer, not the loader |
+| Tab renders, all stats empty | game log for `[TabStats]` lines (rejected key, throttling, give-ups); `api.hypixel.net` reachable | API layer, not the loader |
 | `NoClassDefFoundError: com/google/gson/...` | §7 | a runtime library vanished from Lunar's classpath |
 
 **Useful system properties**, all settable in the same JVM Arguments field:
@@ -415,10 +415,8 @@ before decompiling anything.
 - **Lunar updates.** Low risk by construction: the port hooks only `net.minecraft.*`,
   which Lunar keeps deobfuscated and stable. Real risk lies in Genesis/Ichor or
   classloader changes, which would be Weave's problem to fix, not this mod's.
-- **Hypixel API auth.** `HypixelAPI` calls
-  `https://api.hypixel.net/v2/player?key=%s&uuid=%s`. Query-parameter auth is deprecated
-  in favour of an `API-Key` header; it works today and is the most likely future breakage.
-  One-line fix in `playerapi/api/HypixelAPI.java`.
+- **Hypixel API auth.** `HypixelAPI` sends the key as an `API-Key` header, the documented
+  way; the deprecated `?key=` query parameter is no longer used.
 - **`jvm_arguments` lives in SQLite.** A launcher schema migration, or deleting and
   recreating the profile, drops the setting. It is then re-entered under
   Settings → Game → JVM Arguments (needs Advanced Mode).

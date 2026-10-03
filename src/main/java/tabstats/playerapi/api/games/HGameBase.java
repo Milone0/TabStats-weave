@@ -1,33 +1,29 @@
 package tabstats.playerapi.api.games;
 
-import tabstats.playerapi.api.HypixelAPI;
-import tabstats.playerapi.api.ILeveling;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import tabstats.playerapi.api.stats.Stat;
-import tabstats.util.ChatColor;
-import tabstats.util.Handler;
+import tabstats.util.StatFormatting;
 
-import java.math.BigInteger;
-import java.text.DecimalFormat;
-import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.LinkedList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
-public abstract class HGameBase extends HypixelAPI {
-    private String playerName, playerUUID;
-    public boolean isNicked;
-    public boolean hasPlayed;
+/**
+ * The stats of one game for one player. Everything is read and formatted once, in the
+ * constructor; the API answer is not kept around afterwards, and the tab only ever reads the
+ * finished values.
+ */
+public abstract class HGameBase {
+    private final String playerName, playerUUID;
+    private List<Stat> formattedStats = Collections.emptyList();
+    private Map<String, Stat> statsByKey = Collections.emptyMap();
 
-    public HGameBase(String playerName, String playerUUID) {
+    protected HGameBase(String playerName, String playerUUID) {
         this.playerName = playerName;
         this.playerUUID = playerUUID;
     }
-
-    /**
-     * @return String of all Formatted Stats combined
-     */
-    public abstract String getFormattedStats();
 
     /**
      * @return Game Enumeration of sub-classes Game
@@ -35,20 +31,28 @@ public abstract class HGameBase extends HypixelAPI {
     public abstract HypixelGames getGame();
 
     /**
-     * @return List of every Stat from Game
+     * Every formatted stat, colours included, in the order the game class produces them. Empty
+     * when the player has no stats for this game, so only their name is shown.
      */
-    public abstract List<Stat> getStatList();
-    /**
-     * @return List of every Formatted Stat from Game
-     */
-    public abstract List<Stat> getFormattedStatList();
+    public final List<Stat> getFormattedStatList() {
+        return this.formattedStats;
+    }
 
-    public abstract void setFormattedStatList();
+    /** The same stats keyed by {@link StatFormatting#key}, so the tab can draw each under its column. */
+    public final Map<String, Stat> getStatsByKey() {
+        return this.statsByKey;
+    }
 
-    /**
-     * Method to set the Game Data
-     */
-    public abstract boolean setData(HypixelGames game);
+    /** Called once by the subclass constructor with the finished stats. */
+    protected final void setFormattedStats(List<Stat> stats) {
+        Map<String, Stat> byKey = new LinkedHashMap<>();
+        for (Stat stat : stats) {
+            byKey.put(StatFormatting.key(stat.getStatName()), stat);
+        }
+
+        this.formattedStats = Collections.unmodifiableList(stats);
+        this.statsByKey = Collections.unmodifiableMap(byKey);
+    }
 
     public String getPlayerName() {
         return this.playerName;
@@ -58,112 +62,30 @@ public abstract class HGameBase extends HypixelAPI {
         return this.playerUUID;
     }
 
-    public boolean getIsNicked() {
-        return this.isNicked;
+    /** The stats of one game inside the API's player object, or null when the player never played it. */
+    protected static JsonObject gameStats(JsonObject player, HypixelGames game) {
+        return child(child(player, "stats"), game.getApiName());
     }
 
-    public boolean getHasPlayed() {
-        return this.hasPlayed;
+    protected static JsonObject child(JsonObject parent, String key) {
+        JsonElement element = parent == null ? null : parent.get(key);
+        return element != null && element.isJsonObject() ? element.getAsJsonObject() : null;
     }
 
-    protected List<Stat> setStats(Stat... stats) {
-        LinkedList<Stat> statList = new LinkedList<>();
+    /** A string field, or null when it is missing or not a plain value. */
+    protected static String string(JsonObject parent, String key) {
+        JsonElement element = parent == null ? null : parent.get(key);
+        return element != null && element.isJsonPrimitive() ? element.getAsString() : null;
+    }
 
-        for (Stat stat : stats) {
-            stat.setStat();
-            statList.add(stat);
+    /**
+     * {@code a / b} rounded to two decimals, or {@code a} itself when {@code b} is 0 - the usual
+     * convention for K/D style ratios.
+     */
+    protected static double ratio(int a, int b) {
+        if (b == 0) {
+            return a;
         }
-
-        setFormattedStatList();
-        return statList;
-    }
-
-    protected void setStatsAsync(List<Stat> statList, Stat... stats) {
-        Handler.asExecutor(()-> {
-            for (Stat stat : stats) {
-                stat.setStat();
-                statList.add(stat);
-            }
-            setFormattedStatList();
-        });
-    }
-
-    private int findIndexInArray(Stat[] arr, Stat s) {
-        int index = Arrays.binarySearch(arr, s);
-        return (index < 0) ? -1 : index;
-    }
-
-    public long getLastLogin() {
-        try {
-            return this.playerObject.get("lastLogin").getAsLong();
-        } catch (Exception ex) {
-            return 0;
-        }
-    }
-
-    public long getLastLogout() {
-        try {
-            return this.playerObject.get("lastLogout").getAsLong();
-        } catch (Exception ex) {
-            return 0;
-        }
-    }
-
-    protected long getFirstLogin() {
-        try {
-            return new BigInteger(this.playerObject.get("_id").getAsString().substring(0, 8), 16).intValue() * 1000L;
-        } catch (Exception ex) {
-            return 0;
-        }
-    }
-
-    public long getNetworkXp() {
-        try {
-            return Double.valueOf(this.playerObject.get("networkExp").getAsString()).longValue();
-        } catch (Exception ex) {
-            return 0;
-        }
-    }
-
-    public String getFormattedFirstLogin() {
-        return new SimpleDateFormat("MM-dd-yyyy").format(new Date(this.getFirstLogin()));
-    }
-
-    public String getFormattedNWL() {
-        return Handler.plsSplit(ILeveling.getExactLevel(this.getNetworkXp())).replace(",", ".");
-    }
-
-    public String getFormattedSessionTime() {
-        int seconds = (int)((System.currentTimeMillis() - this.getLastLogin()) / 1000);
-
-        int secondsLeft = seconds % 3600 % 60;
-        int minutes = (int) Math.floor(seconds % 3600 / 60);
-        int hours = (int) Math.floor(seconds / 3600);
-
-        String HH = ChatColor.GREEN.toString() + hours + "h ";
-        String MM = minutes + "m ";
-        String SS = secondsLeft + "s";
-        if (HH.endsWith("0h ")) {
-            HH = ChatColor.YELLOW.toString();
-        } else {
-            SS = "";
-        }
-        if (HH.equalsIgnoreCase(ChatColor.YELLOW.toString()) && MM.endsWith("0m ")) {
-            HH = "";
-            MM = ChatColor.RED.toString();
-        }
-        return HH + MM + SS;
-    }
-
-    protected double formatDouble(int int1, int int2) {
-        if (int2 == 0) {
-            return int1;
-        }
-        String formattedString = new DecimalFormat("##.##").format((double) int1 / (double) int2).replace(",", ".");
-        try {
-            return Double.parseDouble(formattedString);
-        } catch (NumberFormatException e) {
-            return int1;
-        }
+        return Math.round(a * 100.0 / b) / 100.0;
     }
 }

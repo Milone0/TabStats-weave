@@ -12,6 +12,8 @@ import java.lang.reflect.Field;
  */
 public class MaskedGuiTextField extends GuiTextField {
     private static final String[] LINE_SCROLL_FIELD = {"lineScrollOffset", "field_146225_q"};
+    /** Looked up once: the text box is drawn every frame, and it needs this field each time. */
+    private static final Field LINE_SCROLL = Reflect.field(GuiTextField.class, LINE_SCROLL_FIELD);
 
     private final int trailingVisibleChars;
     private boolean revealing;
@@ -27,10 +29,6 @@ public class MaskedGuiTextField extends GuiTextField {
 
     public void setRevealing(boolean revealing) {
         this.revealing = revealing;
-    }
-
-    public boolean isRevealing() {
-        return revealing;
     }
 
     @Override
@@ -130,15 +128,11 @@ public class MaskedGuiTextField extends GuiTextField {
     }
 
     private Integer getLineScrollOffset() {
-        return Reflect.get(lineScrollField(), this);
+        return Reflect.get(LINE_SCROLL, this);
     }
 
     private void setLineScrollOffset(int offset) {
         // If we cannot set the value we simply accept the slight visual mismatch.
-        Reflect.set(lineScrollField(), this, offset);
-    }
-
-    private static Field lineScrollField() {
-        return Reflect.field(GuiTextField.class, LINE_SCROLL_FIELD);
+        Reflect.set(LINE_SCROLL, this, offset);
     }
 }
