@@ -89,6 +89,7 @@ public class StatWorld {
     public void recheckAllPlayers() {
         // Clear all cached data to force re-fetching for everyone
         clearPlayers();
+        PlayerLookup.clearCache();
     }
 
     /**

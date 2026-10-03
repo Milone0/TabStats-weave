@@ -12,6 +12,7 @@ import tabstats.playerapi.WorldLoader;
 import tabstats.util.ChatNameParser;
 import tabstats.util.Gamemodes;
 import tabstats.util.HypixelLocation;
+import tabstats.util.PartyTracker;
 
 /**
  * Feeds names written in chat into the stat world, so players that a pre-game lobby keeps hidden
@@ -28,6 +29,12 @@ public class ChatListener {
 
         /* The answer to the mod's own /locraw: consumed here, never shown to the player. */
         if (HypixelLocation.handleChatMessage(message.getUnformattedText())) {
+            event.setCancelled(true);
+            return;
+        }
+
+        /* Same for the answer to the /party list that the stat commands send. */
+        if (PartyTracker.handleChatMessage(message.getFormattedText())) {
             event.setCancelled(true);
             return;
         }
