@@ -89,6 +89,11 @@ and not to your other versions.
   with their stats, even though the lobby gives them no tab entry — enough to decide
   whether to skip the lobby before it starts. Those rows disappear again once the game
   begins, or when the player leaves
+- `/bw <player>` writes Bedwars stats into your chat, for players that are nowhere near you:
+  - `/bw Hans Klaus` — both players, with the stats the menu is set to show, in that order
+  - `/bw Hans Klaus fkdr` — only the FKDR of both; name any stats after the players, and
+    they are shown in the order you typed them, even ones switched off in the menu
+  - `/bw p` — everyone in your party (`/bw p fkdr` for one stat); says so when you are in none
 - the menu also toggles the mod and the header/footer
 - optional: an [Urchin](https://urchin.ws) key adds cheater tags, Bedwars only.
   Without one that column is just a grey `-`

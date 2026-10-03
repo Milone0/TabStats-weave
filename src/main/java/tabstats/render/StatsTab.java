@@ -7,10 +7,8 @@ import tabstats.playerapi.HPlayer;
 import tabstats.playerapi.StatWorld;
 import tabstats.listener.GameOverlayListener;
 import tabstats.playerapi.api.stats.Stat;
-import tabstats.playerapi.api.stats.StatDouble;
-import tabstats.playerapi.api.stats.StatInt;
-import tabstats.playerapi.api.stats.StatString;
 import tabstats.util.ChatColor;
+import tabstats.util.StatFormatting;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Ordering;
 import com.mojang.authlib.GameProfile;
@@ -429,20 +427,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
     }
 
     private String formatStatValue(Stat stat) {
-        if (stat == null) {
-            return "";
-        }
-
-        switch (stat.getType()) {
-            case INT:
-                return Integer.toString(((StatInt) stat).getValue());
-            case DOUBLE:
-                return Double.toString(((StatDouble) stat).getValue());
-            case STRING:
-                return ((StatString) stat).getValue();
-            default:
-                return "";
-        }
+        return StatFormatting.valueOf(stat);
     }
 
     private String formatStatLabel(Stat stat) {

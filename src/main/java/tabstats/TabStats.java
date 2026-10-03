@@ -1,5 +1,6 @@
 package tabstats;
 
+import tabstats.command.GameStatsCommand;
 import tabstats.command.TabStatsCommand;
 import tabstats.config.ModConfig;
 import tabstats.listener.ChatListener;
@@ -43,7 +44,7 @@ public class TabStats implements ModInitializer {
 
         this.applyModEnabled(ModConfig.getInstance().isModEnabled());
 
-        CommandBus.register(new TabStatsCommand());
+        CommandBus.register(new TabStatsCommand(), new GameStatsCommand("bw", "BEDWARS", "BW"));
     }
 
     private void registerListeners(Object... listeners) {

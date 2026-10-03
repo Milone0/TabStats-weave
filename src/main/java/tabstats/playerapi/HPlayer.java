@@ -64,6 +64,11 @@ public class HPlayer {
         }
     }
 
+    /** Whether any game stats were loaded for this player, as opposed to a bare entry. */
+    public boolean hasGameData() {
+        return this.gameMap != null && !this.gameMap.isEmpty();
+    }
+
     public String getPlayerUUID() {
         return this.playerUUID;
     }

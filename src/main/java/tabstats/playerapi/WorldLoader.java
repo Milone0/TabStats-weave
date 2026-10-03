@@ -10,6 +10,7 @@ import tabstats.util.ChatColor;
 import tabstats.util.Gamemodes;
 import tabstats.util.Handler;
 import tabstats.util.HypixelLocation;
+import tabstats.util.PartyTracker;
 import net.weavemc.api.event.SubscribeEvent;
 import net.weavemc.api.event.TickEvent;
 import net.minecraft.world.World;
@@ -69,6 +70,9 @@ public class WorldLoader extends StatWorld {
     /* populates and checks the stat world player cache every client tick */
     @SubscribeEvent
     public void onClientTick(TickEvent.Post event) {
+        /* Ahead of every gate below: the stat commands work wherever the player is. */
+        PartyTracker.tick();
+
         if (!ModConfig.getInstance().isModEnabled()) {
             // Just reset scroll when disabling, preserve cache
             if (lastModEnabled) {
