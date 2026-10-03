@@ -17,8 +17,7 @@ import java.util.Map;
  *
  * <p>The game classes always hand out their full stat list; this layout is applied on top of it
  * right before rendering, so a column that was moved or switched off here never reaches the tab.
- * Columns are matched by stat name, trimmed and upper-cased, because some names carry padding
- * spaces to widen their column (DUELS "TITLE").
+ * Columns are matched by stat name, trimmed and upper-cased.
  */
 public final class StatColumnLayout {
     /** The gamemodes {@link tabstats.util.Gamemodes} can resolve, in the order the GUI cycles them. */

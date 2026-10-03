@@ -1,13 +1,9 @@
 package tabstats.playerapi;
 
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import tabstats.TabStats;
 import tabstats.playerapi.api.HypixelAPI;
 import tabstats.playerapi.api.MojangAPI;
-import tabstats.playerapi.api.games.bedwars.Bedwars;
-import tabstats.playerapi.api.games.duels.Duels;
-import tabstats.playerapi.api.games.skywars.Skywars;
 import tabstats.playerapi.exception.ApiRequestException;
 import tabstats.playerapi.exception.BadJsonException;
 import tabstats.playerapi.exception.InvalidKeyException;
@@ -157,21 +153,7 @@ public final class PlayerLookup {
         String playerUUID = uuid.toString().replace("-", "");
         try {
             JsonObject wholeObject = new HypixelAPI().getWholeObject(playerUUID);
-            JsonObject playerObject = wholeObject.get("player").getAsJsonObject();
-
-            HPlayer player = new HPlayer(playerUUID, resolvedName);
-            player.setPlayerRank(playerObject);
-
-            JsonElement displayName = playerObject.get("displayname");
-            if (displayName != null && displayName.isJsonPrimitive()) {
-                player.setPlayerName(displayName.getAsString());
-            }
-
-            player.addGames(
-                    new Bedwars(resolvedName, playerUUID, wholeObject),
-                    new Duels(resolvedName, playerUUID, wholeObject),
-                    new Skywars(resolvedName, playerUUID, wholeObject)
-            );
+            HPlayer player = HPlayer.fromApi(playerUUID, resolvedName, wholeObject);
 
             remember(name, player);
             remember(resolvedName, player);

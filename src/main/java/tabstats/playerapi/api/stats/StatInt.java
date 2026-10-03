@@ -1,39 +1,42 @@
 package tabstats.playerapi.api.stats;
 
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 public class StatInt extends Stat {
-    private int value;
-    private boolean loadedValue;
+    private final int value;
+    private final boolean loadedValue;
 
     /**
+     * Reads the value right away. The JSON object is not kept, so a cached player does not hold on
+     * to the whole API answer.
+     *
      * @param statName Name of the Stat
      * @param jsonName Json Name of the Stat in Hypixel's API
-     * @param gameObject JsonObject of the desired Game Stat
+     * @param source JsonObject of the desired Game Stat, may be null
      */
-    public StatInt(String statName, String jsonName, JsonObject gameObject) {
-        super(statName, jsonName, gameObject);
-    }
-
-    public StatInt(String statName) {
+    public StatInt(String statName, String jsonName, JsonObject source) {
         super(statName);
-    }
 
-    @Override
-    public void setStat() {
-        try {
-            this.value = Integer.parseInt(gameObject.get(jsonName).getAsString());
-            this.loadedValue = true;
-        } catch (Exception ex) {
-            this.value = 0;
-            this.loadedValue = false;
+        int parsed = 0;
+        boolean loaded = false;
+        JsonElement element = source == null ? null : source.get(jsonName);
+        if (element != null && element.isJsonPrimitive()) {
+            try {
+                parsed = element.getAsInt();
+                loaded = true;
+            } catch (NumberFormatException ignored) {
+                // not a number - leave it at 0
+            }
         }
-    }
 
-    public void setValue(int value) { this.value = value; }
+        this.value = parsed;
+        this.loadedValue = loaded;
+    }
 
     public int getValue() { return this.value; }
 
+    /** Whether the API actually had this stat, as opposed to it defaulting to 0. */
     public boolean isLoadedValue() {
         return loadedValue;
     }

@@ -1,30 +1,11 @@
 package tabstats.playerapi.api.games.skywars;
 
 import tabstats.playerapi.api.games.HGameBase;
-import tabstats.playerapi.api.stats.StatInt;
 import tabstats.util.ChatColor;
 
 public abstract class SkywarsUtil extends HGameBase {
     public SkywarsUtil(String playerName, String playerUUID) {
         super(playerName, playerUUID);
-    }
-
-    public double getKdr(Skywars sw) {
-        try {
-            if (sw == null || sw.kills == null || sw.deaths == null) return 0D;
-            return this.formatDouble(((StatInt) sw.kills).getValue(), ((StatInt) sw.deaths).getValue());
-        } catch (Exception ignored) {
-            return 0D;
-        }
-    }
-
-    public double getWlr(Skywars sw) {
-        try {
-            if (sw == null || sw.wins == null || sw.losses == null) return 0D;
-            return this.formatDouble(((StatInt) sw.wins).getValue(), ((StatInt) sw.losses).getValue());
-        } catch (Exception ignored) {
-            return 0D;
-        }
     }
 
     public ChatColor getKdrColor(double kdr) {

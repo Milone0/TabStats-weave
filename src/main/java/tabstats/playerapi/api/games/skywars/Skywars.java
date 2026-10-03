@@ -5,54 +5,37 @@ import tabstats.playerapi.api.games.HypixelGames;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.playerapi.api.stats.StatInt;
 import tabstats.playerapi.api.stats.StatString;
-import tabstats.playerapi.exception.GameNullException;
 import tabstats.util.ChatColor;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class Skywars extends SkywarsUtil {
-    public JsonObject skywarsJson;
-    private final JsonObject wholeObject;
-    private List<Stat> statList;
-    public Stat wins, losses, kills, deaths;
 
-    public Skywars(String playerName, String playerUUID, JsonObject wholeObject) {
+    public Skywars(String playerName, String playerUUID, JsonObject player) {
         super(playerName, playerUUID);
-        this.wholeObject = wholeObject;
-        this.playerObject = wholeObject.get("player").getAsJsonObject();
-        this.statList = new ArrayList<>();
 
-        if (setData(HypixelGames.SKYWARS)) {
-            this.statList = setStats(
-                    this.wins = new StatInt("Wins", "wins", this.skywarsJson),
-                    this.losses = new StatInt("Losses", "losses", this.skywarsJson),
-                    this.kills = new StatInt("Kills", "kills", this.skywarsJson),
-                    this.deaths = new StatInt("Deaths", "deaths", this.skywarsJson)
-            );
+        JsonObject skywarsJson = gameStats(player, HypixelGames.SKYWARS);
+        if (skywarsJson == null) {
+            // No stats: the list stays empty, so they show only their name
+            return;
         }
-    }
 
-    @Override
-    public boolean setData(HypixelGames game) {
-        this.isNicked = false;
-        this.hasPlayed = false;
+        int wins = new StatInt("Wins", "wins", skywarsJson).getValue();
+        int losses = new StatInt("Losses", "losses", skywarsJson).getValue();
+        int kills = new StatInt("Kills", "kills", skywarsJson).getValue();
+        int deaths = new StatInt("Deaths", "deaths", skywarsJson).getValue();
 
-        try {
-            if (!this.isNicked) {
-                this.hasPlayed = true;
-                this.skywarsJson = getGameData(wholeObject, game);
-                return true;
-            }
-            return false;
-        } catch (GameNullException ex) {
-            return false;
-        }
-    }
+        double kdr = ratio(kills, deaths);
+        double wlr = ratio(wins, losses);
 
-    @Override
-    public String getFormattedStats() {
-        return String.format("%s%s", getKdrColor(getKdr(this)), getKdr(this));
+        List<Stat> stats = new ArrayList<>();
+        stats.add(new StatString("STAR", buildStarDisplay(skywarsJson)));
+        stats.add(new StatString("KDR", this.getKdrColor(kdr).toString() + kdr));
+        stats.add(new StatString("KILLS", this.getKillsColor(kills).toString() + kills));
+        stats.add(new StatString("WLR", this.getWlrColor(wlr).toString() + wlr));
+        stats.add(new StatString("WINS", this.getWinsColor(wins).toString() + wins));
+        setFormattedStats(stats);
     }
 
     @Override
@@ -60,71 +43,14 @@ public class Skywars extends SkywarsUtil {
         return HypixelGames.SKYWARS;
     }
 
-    @Override
-    public List<Stat> getStatList() {
-        return this.statList;
-    }
-
-    @Override
-    public List<Stat> getFormattedStatList() {
-        List<Stat> list = new ArrayList<>();
-
-        // If player has no stats, return empty list so they show only their name
-        if (!this.hasPlayed || this.skywarsJson == null) {
-            return new ArrayList<>(); // Empty list = no stats displayed
+    private static String buildStarDisplay(JsonObject skywarsJson) {
+        // Only use Hypixel's preformatted string; strip brackets so only number + glyph remain
+        String formatted = string(skywarsJson, "levelFormattedWithBrackets");
+        if (formatted != null) {
+            // Remove literal square brackets, keep colors and any glyphs
+            return formatted.replace("[", "").replace("]", "");
         }
 
-        // STAR
-        StatString star = new StatString("STAR");
-        star.setValue(buildStarDisplay());
-        list.add(0, star);
-
-        // KDR
-        StatString kdr = new StatString("KDR");
-        double kdrVal = this.getKdr(this);
-        kdr.setValue(this.getKdrColor(kdrVal).toString() + kdrVal);
-        list.add(kdr);
-
-        // KILLS
-        StatString kills = new StatString("KILLS");
-        int killsVal = 0;
-        try { if (this.kills != null) killsVal = ((StatInt) this.kills).getValue(); } catch (Exception ignored) {}
-        kills.setValue(this.getKillsColor(killsVal).toString() + killsVal);
-        list.add(kills);
-
-        // WLR
-        StatString wlr = new StatString("WLR");
-        double wlrVal = this.getWlr(this);
-        wlr.setValue(this.getWlrColor(wlrVal).toString() + wlrVal);
-        list.add(wlr);
-
-        // WINS
-        StatString wins = new StatString("WINS");
-        int winsVal = 0;
-        try { if (this.wins != null) winsVal = ((StatInt) this.wins).getValue(); } catch (Exception ignored) {}
-        wins.setValue(this.getWinsColor(winsVal).toString() + winsVal);
-        list.add(wins);
-
-        return list;
-    }
-
-    @Override
-    public void setFormattedStatList() {
-        // no-op; we assemble in getFormattedStatList for consistency
-    }
-
-    private String buildStarDisplay() {
-        // Only use Hypixel's preformatted string; strip brackets so only number + glyph remain
-        try {
-            if (this.playerObject.has("stats") && this.playerObject.getAsJsonObject("stats").has("SkyWars")) {
-                JsonObject sw = this.playerObject.getAsJsonObject("stats").getAsJsonObject("SkyWars");
-                if (sw.has("levelFormattedWithBrackets")) {
-                    String s = sw.get("levelFormattedWithBrackets").getAsString();
-                    // Remove literal square brackets, keep colors and any glyphs
-                    return s.replace("[", "").replace("]", "");
-                }
-            }
-        } catch (Exception ignored) { /* silent-fail */ }
         // If the API doesn't provide it, show a simple placeholder
         return ChatColor.GRAY + "-";
     }

@@ -12,12 +12,10 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 import tabstats.playerapi.exception.ApiRequestException;
 import tabstats.playerapi.exception.BadJsonException;
-import tabstats.util.References;
+import tabstats.util.BuildInfo;
 
 import java.io.IOException;
 import java.net.URI;
@@ -38,9 +36,7 @@ import java.util.stream.Collectors;
  */
 public class UrchinAPI {
     private static final String PLAYER_ENDPOINT = "https://urchin.ws/player";
-    private static final String USER_AGENT = "TabStats-Urchin/" + References.VERSION;
-
-    private static final CloseableHttpClient HTTP_CLIENT = HttpClients.createDefault();
+    private static final String USER_AGENT = "TabStats-Urchin/" + BuildInfo.VERSION;
 
     /**
      * Issues a POST to https://urchin.ws/player with the requested usernames and converts the response
@@ -87,7 +83,7 @@ public class UrchinAPI {
         request.setHeader("User-Agent", USER_AGENT);
         request.setEntity(new StringEntity(body, ContentType.APPLICATION_JSON));
 
-        try (CloseableHttpResponse response = HTTP_CLIENT.execute(request)) {
+        try (CloseableHttpResponse response = Http.CLIENT.execute(request)) {
             int statusCode = response.getStatusLine().getStatusCode();
             HttpEntity entity = response.getEntity();
             String responseBody = entity == null ? "" : EntityUtils.toString(entity, StandardCharsets.UTF_8);
@@ -224,10 +220,6 @@ public class UrchinAPI {
                 }
             }
             return null;
-        }
-
-        public String getWireValue() {
-            return wireValue;
         }
     }
 

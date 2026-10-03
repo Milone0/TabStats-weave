@@ -1,24 +1,11 @@
 package tabstats.playerapi.api.stats;
 
-import com.google.gson.JsonObject;
-
 public abstract class Stat {
-    protected String statName, jsonName;
-    protected JsonObject gameObject;
+    protected final String statName;
 
-    public Stat(String statName, String jsonName, JsonObject gameObject) {
-        this.statName = statName;
-        this.jsonName = jsonName;
-        this.gameObject = gameObject;
-    }
-
-    public Stat(String statName) {
+    protected Stat(String statName) {
         this.statName = statName;
     }
-
-    public abstract void setStat();
-
-    public String getJsonName() { return this.jsonName; }
 
     public String getStatName() { return this.statName; }
 

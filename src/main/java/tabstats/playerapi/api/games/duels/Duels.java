@@ -4,58 +4,38 @@ import tabstats.playerapi.api.games.HypixelGames;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.playerapi.api.stats.StatInt;
 import tabstats.playerapi.api.stats.StatString;
-import tabstats.playerapi.exception.GameNullException;
-import tabstats.util.ChatColor;
 import com.google.gson.JsonObject;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class Duels extends DuelsUtil {
-    public JsonObject duelJson;
-    private final JsonObject wholeObject;
-    private List<Stat> statList;
-    private final List<Stat> formattedStatList;
-    public Stat title, winstreak, bestWinstreak, wins, losses, kills;
 
-    public Duels(String playerName, String playerUUID, JsonObject wholeObject) {
+    public Duels(String playerName, String playerUUID, JsonObject player) {
         super(playerName, playerUUID);
-        this.wholeObject = wholeObject;
-        this.playerObject = wholeObject.get("player").getAsJsonObject();
-        this.statList = new ArrayList<>();
-        this.formattedStatList = new ArrayList<>();
 
-        if (setData(HypixelGames.DUELS)) {
-            this.statList = setStats(
-                    this.title = new StatString("Title", "active_cosmetictitle", this.duelJson),
-                    this.winstreak = new StatInt("Winstreak", "current_winstreak", this.duelJson),
-                    this.bestWinstreak = new StatInt("Best Winstreak", "best_overall_winstreak", this.duelJson),
-                    this.wins = new StatInt("Wins", "wins", this.duelJson),
-                    this.losses = new StatInt("Losses", "losses", this.duelJson),
-                    this.kills = new StatInt("Kills", "kills", this.duelJson));
+        JsonObject duelJson = gameStats(player, HypixelGames.DUELS);
+        if (duelJson == null) {
+            // No stats: the list stays empty, so they show only their name
+            return;
         }
-    }
 
-    @Override
-    public boolean setData(HypixelGames game) {
-        this.isNicked = false;
-        this.hasPlayed = false;
+        int winstreak = new StatInt("Winstreak", "current_winstreak", duelJson).getValue();
+        int bestWinstreak = new StatInt("Best Winstreak", "best_overall_winstreak", duelJson).getValue();
+        int wins = new StatInt("Wins", "wins", duelJson).getValue();
+        int losses = new StatInt("Losses", "losses", duelJson).getValue();
+        int kills = new StatInt("Kills", "kills", duelJson).getValue();
+        double wlr = ratio(wins, losses);
 
-        try {
-            if (!this.isNicked) {
-                this.hasPlayed = true;
-                this.duelJson = getGameData(wholeObject, game);
-                return true;
-            }
-            return false;
-        } catch (GameNullException ex) {
-            return false;
-        }
-    }
-
-    @Override
-    public String getFormattedStats() {
-        return String.format("%s%s", getWlrColor(getWlr(this)), getWlr(this));
+        List<Stat> stats = new ArrayList<>();
+        stats.add(new StatString("TITLE", buildTitle(duelJson)));
+        stats.add(new StatString("WS", this.getWSColor(winstreak).toString() + winstreak));
+        stats.add(new StatString("BWS", this.getWSColor(bestWinstreak).toString() + bestWinstreak));
+        stats.add(new StatString("KILLS", this.getKillsColor(kills).toString() + kills));
+        stats.add(new StatString("WLR", this.getWlrColor(wlr).toString() + wlr));
+        stats.add(new StatString("WINS", /* this sets the color >>*/ this.getWinsColor(wins).toString() + /* this is what's actually displayed >>>*/ wins));
+        stats.add(new StatString("LOSSES", this.getLossesColor(losses).toString() + losses));
+        setFormattedStats(stats);
     }
 
     @Override
@@ -63,59 +43,13 @@ public class Duels extends DuelsUtil {
         return HypixelGames.DUELS;
     }
 
-    @Override
-    public List<Stat> getStatList() {
-        return this.statList;
-    }
-
-
-    /* retrieves the formatted stat list */
-    @Override
-    public List<Stat> getFormattedStatList() {
-        List<Stat> statList = new ArrayList<>(this.formattedStatList);
-
-        // If player has no stats, return empty list so they show only their name
-        if (!this.hasPlayed || this.duelJson == null) {
-            return new ArrayList<>(); // Empty list = no stats displayed
-        }
-
-        // Safely build title row
+    private String buildTitle(JsonObject duelJson) {
         try {
-            StatString title = new StatString("TITLE                      ");
-            String tVal = this.getFormattedTitle(this);
-            title.setValue(tVal == null ? "N/A" : tVal);
-            statList.add(0, title);
-        } catch (Exception ignored) { /* silent-fail */ }
-
-        return statList;
-    }
-
-    /* sets the formatted stat list when the player is first grabbed */
-    /* only set a single time */
-    @Override
-    public void setFormattedStatList() {
-        StatString ws = new StatString("WS");
-        ws.setValue(this.getWSColor(((StatInt)this.winstreak).getValue()).toString() + ((StatInt)this.winstreak).getValue());
-        this.formattedStatList.add(ws);
-
-        StatString bws = new StatString("BWS");
-        bws.setValue(this.getWSColor(((StatInt)this.bestWinstreak).getValue()).toString() + ((StatInt)this.bestWinstreak).getValue());
-        this.formattedStatList.add(bws);
-
-        StatString ks = new StatString("KILLS");
-        ks.setValue(this.getKillsColor(((StatInt)this.kills).getValue()).toString() + ((StatInt)this.kills).getValue());
-        this.formattedStatList.add(ks);
-
-        StatString WLR = new StatString("WLR");
-        WLR.setValue(this.getWlrColor(this.getWlr(this)).toString() + this.getWlr(this));
-        this.formattedStatList.add(WLR);
-
-        StatString wins = new StatString("WINS");
-        wins.setValue(/* this sets the color >>*/ this.getWinsColor(((StatInt)this.wins).getValue()).toString() + /* this is what's actually displayed >>>*/ ((StatInt)this.wins).getValue());
-        this.formattedStatList.add(wins);
-
-        StatString losses = new StatString("LOSSES");
-        losses.setValue(this.getLossesColor(((StatInt)this.losses).getValue()).toString() + ((StatInt)this.losses).getValue());
-        this.formattedStatList.add(losses);
+            String title = string(duelJson, "active_cosmetictitle");
+            String formatted = this.getFormattedTitle(title == null ? "" : title, duelJson);
+            return formatted == null ? "N/A" : formatted;
+        } catch (RuntimeException ignored) {
+            return "N/A";
+        }
     }
 }

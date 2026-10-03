@@ -3,9 +3,6 @@ package tabstats.playerapi;
 import tabstats.config.ModConfig;
 import tabstats.playerapi.api.HypixelAPI;
 import tabstats.playerapi.api.MojangAPI;
-import tabstats.playerapi.api.games.bedwars.Bedwars;
-import tabstats.playerapi.api.games.duels.Duels;
-import tabstats.playerapi.api.games.skywars.Skywars;
 import tabstats.playerapi.exception.ApiRequestException;
 import tabstats.playerapi.exception.ApiThrottleException;
 import tabstats.playerapi.exception.BadJsonException;
@@ -13,7 +10,7 @@ import tabstats.playerapi.exception.InvalidKeyException;
 import tabstats.playerapi.exception.PlayerNullException;
 import tabstats.util.ChatColor;
 import tabstats.util.Handler;
-import tabstats.util.NickDetector;
+import tabstats.util.Log;
 import com.google.gson.JsonObject;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.IChatComponent;
@@ -21,32 +18,38 @@ import net.minecraft.util.IChatComponent;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class StatWorld {
-    private final ConcurrentHashMap<UUID, HPlayer> worldPlayers;
-    private final Map<String, HPlayer> nameAliases;
-    protected final Set<UUID> statAssembly = ConcurrentHashMap.newKeySet();
-    protected final Set<UUID> existedMoreThan5Seconds = ConcurrentHashMap.newKeySet();
-    protected final Map<UUID, Integer> timeCheck = new HashMap<>();
-    protected volatile long lastWorldJoinTime;
+    /** Once more players than this are cached, the ones no longer around are dropped. */
+    protected static final int MAX_CACHED_PLAYERS = 500;
+    /** Attempts 0 to 8 - after that a player is shown without stats. */
+    private static final int MAX_API_RETRIES = 8;
+    /** Spreads the retries that wait for the same throttle to lift, so they do not all fire at once. */
+    private static final long THROTTLE_JITTER_MS = 500L;
     /** Upper bound on chat reveals, so a busy lobby cannot grow the tab list without end. */
     private static final int MAX_CHAT_REVEALED = 80;
+
+    private final ConcurrentHashMap<UUID, HPlayer> worldPlayers = new ConcurrentHashMap<>();
+    private final Map<String, HPlayer> nameAliases = new ConcurrentHashMap<>();
+    protected final Set<UUID> statAssembly = ConcurrentHashMap.newKeySet();
     /** Players known only from chat, keyed by lower-case name, in the order they were revealed. */
     private final Map<String, ChatRevealedPlayer> chatRevealed =
             Collections.synchronizedMap(new LinkedHashMap<String, ChatRevealedPlayer>());
     private final Set<String> chatLookupsInFlight = ConcurrentHashMap.newKeySet();
-
-    public StatWorld() {
-        worldPlayers = new ConcurrentHashMap<>();
-        nameAliases = new ConcurrentHashMap<>();
-    }
+    /**
+     * Bumped whenever the chat reveals are dropped, so a lookup that started in the lobby before
+     * cannot add its player to the next one. Guarded by {@link #chatRevealed}.
+     */
+    private int chatGeneration;
+    /** How many version 2 UUIDs were looked up, and for how many of them Hypixel had a player. */
+    private final AtomicInteger v2Lookups = new AtomicInteger();
+    private final AtomicInteger v2Hits = new AtomicInteger();
 
     public void removePlayer(UUID playerUUID) {
         HPlayer removed = worldPlayers.remove(playerUUID);
-        // Clean up tracking maps to prevent memory leaks
-        timeCheck.remove(playerUUID);
         statAssembly.remove(playerUUID);
-        existedMoreThan5Seconds.remove(playerUUID);
         removeAliases(removed);
     }
 
@@ -58,10 +61,7 @@ public class StatWorld {
     public void clearPlayers() {
         worldPlayers.clear();
         clearChatRevealed();
-        // Clear all tracking maps to prevent memory leaks
-        timeCheck.clear();
         statAssembly.clear();
-        existedMoreThan5Seconds.clear();
         nameAliases.clear();
     }
 
@@ -70,17 +70,10 @@ public class StatWorld {
      * if not in cache then fetch stats for that player only
      */
     public void rerenderTabList() {
-        // Clear tracking to allow fresh processing but preserve cached players
-        timeCheck.clear();
+        // Clear tracking to allow fresh processing but preserve cached players. The actual
+        // re-rendering happens in WorldLoader.onClientTick: cached players display immediately,
+        // everyone else is fetched.
         statAssembly.clear();
-        
-        // Preserve existence tracking for cached players to avoid 5-second delays
-        existedMoreThan5Seconds.clear();
-        existedMoreThan5Seconds.addAll(worldPlayers.keySet());
-        
-        // The actual re-rendering logic happens in WorldLoader.onTick():
-        // - Cached players display immediately
-        // - Non-cached players trigger fetchStatsWithRetry()
     }
 
     /**
@@ -92,24 +85,8 @@ public class StatWorld {
         PlayerLookup.clearCache();
     }
 
-    /**
-     * Force recheck a specific player: Remove from cache and trigger fresh fetchStatsWithRetry
-     */
-    public void recheckPlayer(UUID uuid) {
-        // Remove specific player to force re-fetch
-        HPlayer removed = worldPlayers.remove(uuid);
-        statAssembly.remove(uuid);
-        existedMoreThan5Seconds.remove(uuid);
-        timeCheck.remove(uuid);
-        removeAliases(removed);
-    }
-
     public ConcurrentHashMap<UUID, HPlayer> getWorldPlayers() {
         return this.worldPlayers;
-    }
-
-    public long getLastWorldJoinTime() {
-        return lastWorldJoinTime;
     }
 
     public void removeFromStatAssembly(UUID uuid) { this.statAssembly.remove(uuid); }
@@ -126,16 +103,7 @@ public class StatWorld {
 
         if (fallbackName != null) {
             for (String candidate : fallbackName) {
-                if (candidate == null) {
-                    continue;
-                }
-
-                String normalized = candidate.trim();
-                if (normalized.isEmpty()) {
-                    continue;
-                }
-
-                HPlayer aliased = nameAliases.get(normalized.toLowerCase(Locale.ROOT));
+                HPlayer aliased = getPlayerByName(candidate);
                 if (aliased != null) {
                     return aliased;
                 }
@@ -145,20 +113,24 @@ public class StatWorld {
         return null;
     }
 
+    /** A cached player by any name they were seen under, ignoring case. */
     public HPlayer getPlayerByName(String name) {
-        for (Map.Entry<UUID,HPlayer> playerEntry : this.worldPlayers.entrySet()) {
-            HPlayer player = playerEntry.getValue();
-            if (player == null) {
-                continue;
-            }
-
-            String candidate = player.getPlayerName();
-            if (candidate != null && candidate.equalsIgnoreCase(name)) {
-                return playerEntry.getValue();
-            }
+        if (name == null) {
+            return null;
         }
 
-        return null;
+        String normalized = name.trim();
+        return normalized.isEmpty() ? null : this.nameAliases.get(normalized.toLowerCase(Locale.ROOT));
+    }
+
+    /** How many version 2 UUIDs were looked up this session, for {@code /tabstats where}. */
+    public int getV2Lookups() {
+        return this.v2Lookups.get();
+    }
+
+    /** How many of those Hypixel actually had a player for. */
+    public int getV2Hits() {
+        return this.v2Hits.get();
     }
 
     /**
@@ -166,6 +138,7 @@ public class StatWorld {
      */
     public void fetchStats(EntityPlayer entityPlayer) {
         if (!ModConfig.getInstance().isModEnabled()) {
+            this.statAssembly.remove(entityPlayer.getUniqueID());
             return;
         }
 
@@ -174,143 +147,83 @@ public class StatWorld {
                 entityPlayer.getUniqueID(),
                 entityPlayer.getName(),
                 displayName != null ? displayName.getFormattedText() : null,
-                0);
+                0,
+                0L);
     }
 
-    private void fetchStatsWithRetry(UUID uuid, String playerName, String displayComponent, int apiRetryAttempt) {
-        Handler.asExecutor(() -> {
-            if (!ModConfig.getInstance().isModEnabled()) {
-                this.statAssembly.remove(uuid);
+    /**
+     * Loads one player on the pool after {@code delayMs}. The wait happens on the scheduler, so a
+     * retry that is waiting out a throttle never ties up a pool thread.
+     */
+    private void fetchStatsWithRetry(UUID uuid, String playerName, String displayComponent, int attempt, long delayMs) {
+        Handler.schedule(() -> loadStats(uuid, playerName, displayComponent, attempt), delayMs);
+    }
+
+    private void loadStats(UUID uuid, String playerName, String displayComponent, int attempt) {
+        if (!ModConfig.getInstance().isModEnabled()) {
+            this.statAssembly.remove(uuid);
+            return;
+        }
+
+        HPlayer existing = getPlayerByIdentity(uuid, displayComponent, playerName);
+        if (existing != null) {
+            cachePlayer(uuid, existing, displayComponent);
+            return;
+        }
+
+        String playerUUID = uuid.toString().replace("-", "");
+        boolean versionTwo = uuid.version() == 2;
+        if (versionTwo && attempt == 0) {
+            this.v2Lookups.incrementAndGet();
+        }
+
+        try {
+            JsonObject wholeObject = new HypixelAPI().getWholeObject(playerUUID);
+            // Only real players have API data, so whoever comes back here is not nicked
+            HPlayer hPlayer = HPlayer.fromApi(playerUUID, playerName, wholeObject);
+            if (versionTwo) {
+                this.v2Hits.incrementAndGet();
+            }
+            cachePlayer(uuid, hPlayer, playerName, displayComponent);
+        } catch (ApiThrottleException ex) {
+            // Requests are paused for everyone; come back once the pause is over
+            long jitter = ThreadLocalRandom.current().nextLong(THROTTLE_JITTER_MS);
+            retryLater(uuid, playerName, displayComponent, attempt, ex.getRetryAfterMs() + jitter);
+        } catch (InvalidKeyException ex) {
+            /*
+             * No key, or one Hypixel rejects. Asking again would only repeat the answer - each tick,
+             * for every player. They stay in statAssembly instead; saving a new key rechecks everyone.
+             */
+        } catch (PlayerNullException ex) {
+            if (versionTwo) {
+                // Version 2 UUIDs with no API data are NPCs and lobby bots - leave in statAssembly so we don't re-fetch
                 return;
             }
-            String playerUUID = uuid.toString().replace("-", "");
+            retryLater(uuid, playerName, displayComponent, attempt, backoff(attempt));
+        } catch (ApiRequestException | BadJsonException ex) {
+            retryLater(uuid, playerName, displayComponent, attempt, backoff(attempt));
+        } catch (RuntimeException ex) {
+            // A player object shaped differently than expected - treat it like a failed call
+            Log.warn("Unexpected API answer for " + playerName, ex);
+            retryLater(uuid, playerName, displayComponent, attempt, backoff(attempt));
+        }
+    }
 
-            HPlayer existing = getPlayerByIdentity(uuid, displayComponent, playerName);
-            if (existing != null) {
-                cachePlayer(uuid, existing);
-                registerAlias(existing, displayComponent);
-                return;
-            }
+    private void retryLater(UUID uuid, String playerName, String displayComponent, int attempt, long delayMs) {
+        if (attempt >= MAX_API_RETRIES) {
+            // Out of retries: show them as a player without stats rather than not at all
+            Log.warn("Giving up on the stats of " + playerName + " after " + (attempt + 1) + " attempts");
+            HPlayer bare = new HPlayer(uuid.toString().replace("-", ""), playerName);
+            cachePlayer(uuid, bare, playerName, displayComponent);
+            return;
+        }
 
-            HPlayer hPlayer = new HPlayer(playerUUID, playerName);
-            registerAlias(hPlayer, playerName);
-            registerAlias(hPlayer, displayComponent);
+        fetchStatsWithRetry(uuid, playerName, displayComponent, attempt + 1, delayMs);
+    }
 
-            // Fire API call; nick status is inferred instantly from UUID version (v1 = nicked)
-            boolean apiSuccess = false;
-            Exception apiException = null;
-            boolean throttleTriggered = false;
-            boolean globalThrottle = false;
-            int uuidVersion = uuid.version();
-
-            // 1. Attempt API call
-            try {
-                JsonObject wholeObject = new HypixelAPI().getWholeObject(playerUUID);
-                JsonObject playerObject = wholeObject.get("player").getAsJsonObject();
-
-                hPlayer.setPlayerRank(playerObject);
-                hPlayer.setPlayerName(playerObject.get("displayname").getAsString());
-                registerAlias(hPlayer, hPlayer.getPlayerName());
-
-                hPlayer.addGames(
-                        new Bedwars(playerName, playerUUID, wholeObject),
-                        new Duels(playerName, playerUUID, wholeObject),
-                        new Skywars(playerName, playerUUID, wholeObject)
-                );
-                apiSuccess = true;
-
-            } catch (ApiThrottleException ex) {
-                apiSuccess = false;
-                apiException = ex;
-                throttleTriggered = true;
-                globalThrottle = ex.isGlobal();
-            } catch (PlayerNullException | ApiRequestException | InvalidKeyException | BadJsonException ex) {
-                apiSuccess = false;
-                apiException = ex;
-            }
-
-            // 2. Determine nick status purely from UUID version (v1 = nicked)
-            boolean isNicked = NickDetector.isNickedUuid(playerUUID);
-
-            // 3. Handle results based on outcomes
-            if (apiSuccess) {
-                // API worked - player is definitely real, not nicked (API wouldn't return data for nicked players)
-                hPlayer.setNicked(false);
-                cachePlayer(uuid, hPlayer);
-                return;
-            }
-
-            if (isNicked) {
-                // Nicked player (UUID v1) - no API data expected, mark as nicked and cache
-                hPlayer.setNicked(true);
-                cachePlayer(uuid, hPlayer);
-                return;
-            }
-
-            // 4. API failed - handle based on nick uncertainty
-            if (!apiSuccess) {
-                if (throttleTriggered) {
-                    if (apiRetryAttempt < 8) {
-                        long baseDelay = globalThrottle ? 5_000L : 2_000L;
-                        long delay = baseDelay * Math.max(1, apiRetryAttempt + 1);
-                        Handler.asExecutor(() -> {
-                            if (!ModConfig.getInstance().isModEnabled()) {
-                                this.statAssembly.remove(uuid);
-                                return;
-                            }
-                            try {
-                                Thread.sleep(delay);
-                                fetchStatsWithRetry(uuid, playerName, displayComponent, apiRetryAttempt + 1);
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                            }
-                        });
-                        return;
-                    }
-                    throttleTriggered = false; // fall through to cache fallback below
-                }
-
-                if (uuidVersion == 2 && apiException instanceof PlayerNullException) {
-                    // Version 2 UUIDs with no API data are lobby bots/spoofs - leave in statAssembly so we don't re-fetch
-                    removeAliases(hPlayer);
-                    return;
-                }
-                // Don't retry on certain permanent failures
-                if (apiException instanceof InvalidKeyException) {
-                    // Invalid API key - stop everything, don't waste calls
-                    this.removeFromStatAssembly(uuid);
-                    return;
-                }
-
-                // Real UUID (v4 or v2) but API failed - use exponential backoff for API issues
-                if (apiRetryAttempt < 8) { // 0-7 = 8 attempts total
-                    // Schedule retry with exponential backoff
-                    Handler.asExecutor(() -> {
-                        if (!ModConfig.getInstance().isModEnabled()) {
-                            this.statAssembly.remove(uuid);
-                            return;
-                        }
-                        try {
-                            Thread.sleep(apiRetryAttempt == 0 ? 0 : Math.round(250 * Math.pow(2, apiRetryAttempt - 1)));
-                            fetchStatsWithRetry(uuid, playerName, displayComponent, apiRetryAttempt + 1);
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                        }
-                    });
-                    return;
-                } else {
-                    // Max API retries reached for real UUID - treat as regular player with no stats
-                    hPlayer.setNicked(false);
-                    cachePlayer(uuid, hPlayer);
-                    return;
-                }
-            }
-
-            // 5. API succeeded - player is definitely real, not nicked
-            // (API wouldn't return valid data for nicked players)
-            hPlayer.setNicked(false);
-            cachePlayer(uuid, hPlayer);
-        });
+    /** Exponential backoff for failed calls: 0, 250, 500, 1000 ... 16000 ms. */
+    private static long backoff(int attempt) {
+        return attempt == 0 ? 0L : 250L << (attempt - 1);
     }
 
     /**
@@ -329,12 +242,12 @@ public class StatWorld {
         }
 
         String key = trimmed.toLowerCase(Locale.ROOT);
-        if (this.chatRevealed.containsKey(key)) {
-            return;
-        }
-
-        if (this.chatRevealed.size() >= MAX_CHAT_REVEALED) {
-            return;
+        final int generation;
+        synchronized (this.chatRevealed) {
+            if (this.chatRevealed.containsKey(key) || this.chatRevealed.size() >= MAX_CHAT_REVEALED) {
+                return;
+            }
+            generation = this.chatGeneration;
         }
 
         /* Already fetched for some other reason - they have an entity, or they chatted before. */
@@ -366,20 +279,34 @@ public class StatWorld {
                      * and an alias under it would label the real tab entry of that name too.
                      */
                     UUID placeholder = UUID.nameUUIDFromBytes(("TabStatsNick:" + key).getBytes(StandardCharsets.UTF_8));
-                    this.chatRevealed.put(key, new ChatRevealedPlayer(placeholder, trimmed, false));
+                    revealIfStillCurrent(generation, key, new ChatRevealedPlayer(placeholder, trimmed, false));
                     return;
                 }
 
                 UUID uuid = profile.getUuid();
-                this.chatRevealed.put(key, new ChatRevealedPlayer(uuid, profile.getName(), true));
+                if (!revealIfStillCurrent(generation, key, new ChatRevealedPlayer(uuid, profile.getName(), true))) {
+                    return;
+                }
 
                 if (getPlayerByUUID(uuid) == null && this.statAssembly.add(uuid)) {
-                    fetchStatsWithRetry(uuid, profile.getName(), null, 0);
+                    fetchStatsWithRetry(uuid, profile.getName(), null, 0, 0L);
                 }
             } finally {
                 this.chatLookupsInFlight.remove(key);
             }
         });
+    }
+
+    /** Adds a reveal unless the lobby it was looked up for has been left in the meantime. */
+    private boolean revealIfStillCurrent(int generation, String key, ChatRevealedPlayer player) {
+        synchronized (this.chatRevealed) {
+            if (generation != this.chatGeneration) {
+                return false;
+            }
+
+            this.chatRevealed.put(key, player);
+            return true;
+        }
     }
 
     /** Drops a chat reveal again, for when the server announces that the player left. */
@@ -398,16 +325,26 @@ public class StatWorld {
     }
 
     public void clearChatRevealed() {
-        this.chatRevealed.clear();
+        synchronized (this.chatRevealed) {
+            this.chatGeneration++;
+            this.chatRevealed.clear();
+        }
         this.chatLookupsInFlight.clear();
     }
 
-    protected Set<UUID> getChatRevealedUuids() {
-        Set<UUID> uuids = new HashSet<>();
+    /** Drops every cached player that is not in {@code keep} and not revealed by chat either. */
+    protected void retainPlayers(Set<UUID> keep) {
+        Set<UUID> safe = new HashSet<>(keep);
+        // Chat-revealed players have no entity, so keep them out of the eviction
         for (ChatRevealedPlayer player : getChatRevealedPlayers()) {
-            uuids.add(player.getUuid());
+            safe.add(player.getUuid());
         }
-        return uuids;
+
+        for (UUID playerUUID : new ArrayList<>(this.worldPlayers.keySet())) {
+            if (!safe.contains(playerUUID)) {
+                removePlayer(playerUUID);
+            }
+        }
     }
 
     private static UUID parseUuid(String raw) {
@@ -427,8 +364,6 @@ public class StatWorld {
             return null;
         }
     }
-
-    // Skin hash extraction removed – no longer needed for nick detection
 
     private void registerAlias(HPlayer player, String name) {
         if (player == null || name == null) {
@@ -457,10 +392,6 @@ public class StatWorld {
     }
 
     private void storeAlias(String name, HPlayer player) {
-        if (name == null) {
-            return;
-        }
-
         String trimmed = name.trim();
         if (trimmed.isEmpty()) {
             return;
@@ -469,8 +400,15 @@ public class StatWorld {
         nameAliases.put(trimmed.toLowerCase(Locale.ROOT), player);
     }
 
-    private void cachePlayer(UUID uuid, HPlayer player) {
+    /**
+     * Caches a finished player and lets the tick pick up the next one. The aliases are only
+     * registered here, so a name never points at a player that is still being fetched.
+     */
+    private void cachePlayer(UUID uuid, HPlayer player, String... aliases) {
         this.addPlayer(uuid, player);
+        for (String alias : aliases) {
+            registerAlias(player, alias);
+        }
         this.removeFromStatAssembly(uuid);
     }
 }

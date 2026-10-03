@@ -10,11 +10,11 @@ import tabstats.playerapi.api.UrchinAPI;
 import tabstats.playerapi.api.UrchinAPI.UrchinReport;
 import tabstats.playerapi.api.UrchinAPI.UrchinReportType;
 import tabstats.playerapi.api.games.HGameBase;
-import tabstats.playerapi.api.stats.StatInt;
 import tabstats.playerapi.exception.ApiRequestException;
 import tabstats.playerapi.exception.BadJsonException;
 import tabstats.util.ChatColor;
 import tabstats.util.Handler;
+import tabstats.util.Log;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -74,15 +74,6 @@ public abstract class BedwarsUtil extends HGameBase {
         super(playerName, playerUUID);
     }
 
-    public double getFkdr(Bedwars bw) {
-        try {
-            if (bw == null || bw.finalKills == null || bw.finalDeaths == null) return 0D;
-            return this.formatDouble(((StatInt)bw.finalKills).getValue(), ((StatInt)bw.finalDeaths).getValue());
-        } catch (Exception ignored) {
-            return 0D;
-        }
-    }
-
     public ChatColor getFkdrColor(double fkdr) {
         if (fkdr < 1.5) return ChatColor.GRAY;
         if (fkdr < 3.5) return ChatColor.WHITE;
@@ -94,15 +85,6 @@ public abstract class BedwarsUtil extends HGameBase {
         return ChatColor.DARK_PURPLE;
     }
 
-    public double getWlr(Bedwars bw) {
-        try {
-            if (bw == null || bw.wins == null || bw.losses == null) return 0D;
-            return this.formatDouble(((StatInt)bw.wins).getValue(), ((StatInt)bw.losses).getValue());
-        } catch (Exception ignored) {
-            return 0D;
-        }
-    }
-
     public ChatColor getWlrColor(double wlr) {
         if (wlr < 1) return ChatColor.GRAY;
         if (wlr < 2) return ChatColor.WHITE;
@@ -112,15 +94,6 @@ public abstract class BedwarsUtil extends HGameBase {
         if (wlr < 15) return ChatColor.DARK_RED;
         if (wlr < 50) return ChatColor.LIGHT_PURPLE;
         return ChatColor.DARK_PURPLE;
-    }
-
-    public double getBblr(Bedwars bw) {
-        try {
-            if (bw == null || bw.bedsBroken == null || bw.bedsLost == null) return 0D;
-            return this.formatDouble(((StatInt)bw.bedsBroken).getValue(), ((StatInt)bw.bedsLost).getValue());
-        } catch (Exception ignored) {
-            return 0D;
-        }
     }
 
     public ChatColor getBblrColor(double bblr) {
@@ -154,12 +127,11 @@ public abstract class BedwarsUtil extends HGameBase {
         return ChatColor.GRAY + "-";
     }
 
+    /** The glyph changes one prestige after each thousand: [1000✫], [1100✪], [2100⚝], [3100✥]. */
     private String getBedwarsGlyph(int star) {
-        if (star < 1000) return "\u272B"; // ✫
-        if (star < 2000) return "\u272A"; // ✪
-        if (star < 3000) return "\u269D"; // ⚝
-        if (star < 4000) return "\u2725"; // ✥
-        if (star < 5000) return "\u2725"; // ✥
+        if (star < 1100) return "\u272B"; // ✫
+        if (star < 2100) return "\u272A"; // ✪
+        if (star < 3100) return "\u269D"; // ⚝
         return "\u2725"; // ✥
     }
 
@@ -201,7 +173,7 @@ public abstract class BedwarsUtil extends HGameBase {
         String trimmedKey = apiKey == null ? "" : apiKey.trim();
         if (trimmedKey.isEmpty()) {
             for (String identity : identities) {
-                results.put(identity, cacheTag(identity, createNoHitTag()));
+                results.put(identity, createPendingTag());
             }
             return results;
         }
@@ -218,16 +190,13 @@ public abstract class BedwarsUtil extends HGameBase {
                 }
             }
 
-            List<UrchinReport> fallback = normalizedResponse.isEmpty() ? null : normalizedResponse.values().iterator().next();
             for (String identity : identities) {
                 String normalizedIdentity = normalizeIdentity(identity);
                 List<UrchinReport> reports = normalizedIdentity == null ? null : normalizedResponse.get(normalizedIdentity);
-                if (reports == null) {
-                    reports = fallback;
-                }
                 results.put(identity, toCachedUrchinTag(identity, reports));
             }
         } catch (ApiRequestException | BadJsonException ex) {
+            Log.warn("Urchin lookup failed: " + ex.getMessage());
             for (String identity : identities) {
                 results.put(identity, createPendingTag());
             }
@@ -258,16 +227,33 @@ public abstract class BedwarsUtil extends HGameBase {
         }
 
         private void processLoop() {
-            while (true) {
-                delay(BATCH_DEBOUNCE_MS);
-                List<LookupRequest> batch = pollBatch();
-                if (!batch.isEmpty()) {
-                    dispatch(batch);
+            boolean finished = false;
+            try {
+                while (true) {
+                    delay(BATCH_DEBOUNCE_MS);
+                    List<LookupRequest> batch = pollBatch();
+                    if (!batch.isEmpty()) {
+                        dispatch(batch);
+                    }
+                    synchronized (lock) {
+                        if (pendingLookups.isEmpty()) {
+                            draining = false;
+                            finished = true;
+                            return;
+                        }
+                    }
                 }
-                synchronized (lock) {
-                    if (pendingLookups.isEmpty()) {
-                        draining = false;
-                        return;
+            } finally {
+                if (!finished) {
+                    /*
+                     * The loop died on an exception. Left set, draining would make every later
+                     * enqueue wait for a loop that no longer exists.
+                     */
+                    synchronized (lock) {
+                        draining = !pendingLookups.isEmpty();
+                        if (draining) {
+                            Handler.asExecutor(this::processLoop);
+                        }
                     }
                 }
             }
@@ -300,7 +286,14 @@ public abstract class BedwarsUtil extends HGameBase {
                 identities.add(request.identity);
             }
 
-            Map<String, CachedUrchinTag> resolved = resolveUrchinBatch(getActiveUrchinApiKey(), identities);
+            Map<String, CachedUrchinTag> resolved;
+            try {
+                resolved = resolveUrchinBatch(getActiveUrchinApiKey(), identities);
+            } catch (RuntimeException ex) {
+                // Every callback still has to hear back, or its player never asks again
+                Log.warn("Urchin lookup failed", ex);
+                resolved = Collections.emptyMap();
+            }
             for (LookupRequest request : batch) {
                 CachedUrchinTag tag = resolved.get(request.identity);
                 if (tag == null) {
@@ -365,12 +358,6 @@ public abstract class BedwarsUtil extends HGameBase {
             }
         }
 
-        for (UrchinReport report : reports) {
-            if (report != null && getMatrixEntry(report.getType()) != null) {
-                return report;
-            }
-        }
-
         return null;
     }
 
@@ -382,16 +369,18 @@ public abstract class BedwarsUtil extends HGameBase {
                 chatLabel,
                 report.getType(),
                 sanitize(report.getReason()),
-                formatDate(report.getAddedOn())
+                formatDate(report.getAddedOn()),
+                false
         );
     }
 
     protected static CachedUrchinTag createNoHitTag() {
-        return new CachedUrchinTag(NO_RESPONSE_TAG, NO_RESPONSE_TAG, null, "", "");
+        return new CachedUrchinTag(NO_RESPONSE_TAG, NO_RESPONSE_TAG, null, "", "", false);
     }
 
+    /** No answer from Urchin. Never cached, so the lookup can be tried again. */
     protected static CachedUrchinTag createPendingTag() {
-        return new CachedUrchinTag("", "", null, "", "");
+        return new CachedUrchinTag("", "", null, "", "", true);
     }
 
     private static final class UrchinReportMatrixEntry {
@@ -579,14 +568,21 @@ public abstract class BedwarsUtil extends HGameBase {
         private final UrchinReportType type;
         private final String reason;
         private final String addedOn;
+        private final boolean pending;
         private final AtomicBoolean announced = new AtomicBoolean(false);
 
-        private CachedUrchinTag(String displayValue, String chatLabel, UrchinReportType type, String reason, String addedOn) {
+        private CachedUrchinTag(String displayValue, String chatLabel, UrchinReportType type, String reason, String addedOn, boolean pending) {
             this.displayValue = displayValue == null ? NO_RESPONSE_TAG : displayValue;
             this.chatLabel = chatLabel == null ? this.displayValue : chatLabel;
             this.type = type;
             this.reason = reason == null ? "" : reason;
             this.addedOn = addedOn == null ? "" : addedOn;
+            this.pending = pending;
+        }
+
+        /** True when Urchin gave no answer, as opposed to answering "no reports". */
+        public boolean isPending() {
+            return pending;
         }
 
         public String getDisplayValue() {
