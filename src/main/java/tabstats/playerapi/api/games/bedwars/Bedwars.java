@@ -5,71 +5,70 @@ import tabstats.playerapi.api.games.bedwars.BedwarsUtil.CachedUrchinTag;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.playerapi.api.stats.StatInt;
 import tabstats.playerapi.api.stats.StatString;
-import tabstats.playerapi.exception.GameNullException;
 import tabstats.util.ChatColor;
 import tabstats.util.Handler;
 import com.google.gson.JsonObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Bedwars extends BedwarsUtil {
-    private JsonObject bedwarsJson, wholeObject;
-    private List<Stat> statList;
-    private List<Stat> formattedStatList;
-    public Stat gamesPlayed, finalKills, finalDeaths, wins, losses, kills, deaths, bedsBroken, bedsLost, winstreak, star;
-    private CachedUrchinTag cachedUrchinTag;
-    private StatString tagStat;
-    private volatile boolean urchinLookupScheduled;
+    /** A failed Urchin lookup is tried again this often, this much later each time. */
+    private static final int URCHIN_MAX_RETRIES = 3;
+    private static final long URCHIN_RETRY_DELAY_MS = 15_000L;
 
-    public Bedwars(String playerName, String playerUUID, JsonObject wholeObject) {
+    /** Null when no Urchin key was set while this player was loaded. */
+    private final StatString tagStat;
+    private final AtomicBoolean urchinLookupScheduled = new AtomicBoolean();
+    private int urchinRetries;
+
+    public Bedwars(String playerName, String playerUUID, JsonObject player) {
         super(playerName, playerUUID);
-        this.wholeObject = wholeObject;
-        this.achievementObj = wholeObject.get("player").getAsJsonObject().get("achievements").getAsJsonObject();
-        this.playerObject = wholeObject.get("player").getAsJsonObject();
-        this.statList = new ArrayList<>();
-        this.formattedStatList = new ArrayList<>();
 
-        if (setData(HypixelGames.BEDWARS)) {
-            this.statList = setStats(
-                    // "bedwars_level" is the Api name of the star.
-                    // If you wish to add any other stats, you add them like this, statName is whatever name you want to call it, then jsonName is the name of the stat in the API
-                    // and the 3rd parameter is the json object in which this api stat resides. So winstreak is inside of the bedwars json object along with all the other bedwars
-                    // statistics. For some reason, bedwars level is inside of your achievements?? idk why
-                    this.star = new StatInt("Level", "bedwars_level", this.achievementObj),
-                    this.winstreak = new StatInt("Winstreak", "winstreak", this.bedwarsJson),
-                    this.gamesPlayed = new StatInt("Games Played", "games_played_bedwars", this.bedwarsJson),
-                    this.finalKills = new StatInt("Final Kills", "final_kills_bedwars", this.bedwarsJson),
-                    this.finalDeaths = new StatInt("Final Deaths", "final_deaths_bedwars", this.bedwarsJson),
-                    this.wins = new StatInt("Wins", "wins_bedwars", this.bedwarsJson),
-                    this.losses = new StatInt("Losses", "losses_bedwars", this.bedwarsJson),
-                    this.kills = new StatInt("Kills", "kills_bedwars", this.bedwarsJson),
-                    this.deaths = new StatInt("Deaths", "deaths_bedwars", this.bedwarsJson),
-                    this.bedsBroken = new StatInt("Beds Broken", "beds_broken_bedwars", this.bedwarsJson),
-                    this.bedsLost = new StatInt("Beds Lost", "beds_lost_bedwars", this.bedwarsJson));
+        JsonObject bedwarsJson = gameStats(player, HypixelGames.BEDWARS);
+        // "bedwars_level" is the star. Unlike every other Bedwars stat it lives in the achievements.
+        int star = new StatInt("Level", "bedwars_level", child(player, "achievements")).getValue();
+
+        List<Stat> stats = new ArrayList<>();
+        if (bedwarsJson == null) {
+            // No Bedwars stats at all: only the star column, which reads "-"
+            this.tagStat = null;
+            stats.add(new StatString("STAR", this.getStarWithColor(star)));
+            setFormattedStats(stats);
+            return;
         }
-    }
 
-    @Override
-    public boolean setData(HypixelGames game) {
-        this.isNicked = false;
-        this.hasPlayed = false;
+        StatInt winstreak = new StatInt("Winstreak", "winstreak", bedwarsJson);
+        int finalKills = new StatInt("Final Kills", "final_kills_bedwars", bedwarsJson).getValue();
+        int finalDeaths = new StatInt("Final Deaths", "final_deaths_bedwars", bedwarsJson).getValue();
+        int wins = new StatInt("Wins", "wins_bedwars", bedwarsJson).getValue();
+        int losses = new StatInt("Losses", "losses_bedwars", bedwarsJson).getValue();
+        int bedsBroken = new StatInt("Beds Broken", "beds_broken_bedwars", bedwarsJson).getValue();
+        int bedsLost = new StatInt("Beds Lost", "beds_lost_bedwars", bedwarsJson).getValue();
 
-        try {
-            if (!this.isNicked) {
-                this.hasPlayed = true;
-                this.bedwarsJson = getGameData(wholeObject, game);
-                return true;
-            }
-            return false;
-        } catch (GameNullException ex) {
-            return false;
+        double fkdr = ratio(finalKills, finalDeaths);
+        double wlr = ratio(wins, losses);
+        double bblr = ratio(bedsBroken, bedsLost);
+
+        // TAG stays the first column, so it is added before everything else
+        this.tagStat = getActiveUrchinApiKey().isEmpty() ? null : new StatString("TAG", "");
+        if (this.tagStat != null) {
+            stats.add(this.tagStat);
         }
-    }
 
-    @Override
-    public String getFormattedStats() {
-        return String.format("%s%s", getFkdrColor(getFkdr(this)), getFkdr(this));
+        stats.add(new StatString("STAR", this.getStarWithColor(star)));
+        stats.add(new StatString("WS", formatWsValue(winstreak)));
+        stats.add(new StatString("FKDR", this.getFkdrColor(fkdr).toString() + fkdr));
+        stats.add(new StatString("FINALS", /* this sets the color >>*/ this.getFinalsColor(finalKills).toString() + /* this is what's actually displayed >>>*/ finalKills));
+        stats.add(new StatString("WLR", this.getWlrColor(wlr).toString() + wlr));
+        stats.add(new StatString("WINS", this.getWinsColor(wins).toString() + wins));
+        stats.add(new StatString("BBLR", this.getBblrColor(bblr).toString() + bblr));
+        setFormattedStats(stats);
+
+        if (this.tagStat != null) {
+            scheduleUrchinLookup();
+        }
     }
 
     @Override
@@ -77,92 +76,13 @@ public class Bedwars extends BedwarsUtil {
         return HypixelGames.BEDWARS;
     }
 
-    @Override
-    public List<Stat> getStatList() {
-        return this.statList;
-    }
-
-    // this is what we're grabbing as the stat list.
-    // so the first stat in the for loop that we'll encounter is Star
-    // then we'll encounter WS
-    // then FKDR
-    // the for loop will grab these values accordingly and store it into the statValue string
-    /* retrieves the formatted stat list */
-    @Override
-    public List<Stat> getFormattedStatList() {
-        List<Stat> returnList = new ArrayList<>(this.formattedStatList);
-
-        // If player has no stats, return empty list so they show only their name
-        int starVal = 0;
-        try { if (this.star != null) starVal = ((StatInt)this.star).getValue(); } catch (Exception ignored) {}
-        StatString star = new StatString("STAR");
-        star.setValue(this.getStarWithColor(starVal));
-
-        // Insert STAR at index 1 so TAG stays as the first column
-        boolean hasTagColumn = this.tagStat != null && !returnList.isEmpty() && returnList.get(0) == this.tagStat;
-        int insertIndex = hasTagColumn ? Math.min(1, returnList.size()) : 0;
-        returnList.add(insertIndex, star);
-        if (!this.hasPlayed || this.bedwarsJson == null) {
-            return returnList;
-        }
-
-        return returnList;
-    }
-
-    /* sets the formatted stat list when the player is first grabbed */
-    /* only set a single time */
-    @Override
-    public void setFormattedStatList() {
-        boolean hasUrchinKey = !getActiveUrchinApiKey().isEmpty();
-        if (hasUrchinKey) {
-            if (this.tagStat == null) {
-                this.tagStat = new StatString("TAG");
-            }
-            this.tagStat.setValue("");
-            this.formattedStatList.add(this.tagStat);
-            scheduleUrchinLookup();
-        } else {
-            this.tagStat = null;
-        }
-
-        StatString ws = new StatString("WS");
-        ws.setValue(formatWsValue());
-        this.formattedStatList.add(ws);
-
-        StatString fkdr = new StatString("FKDR");
-        fkdr.setValue(this.getFkdrColor(this.getFkdr(this)).toString() + this.getFkdr(this));
-        this.formattedStatList.add(fkdr);
-
-        StatString finals = new StatString("FINALS");
-        finals.setValue(/* this sets the color >>*/ this.getFinalsColor(((StatInt)this.finalKills).getValue()).toString() + /* this is what's actually displayed >>>*/ ((StatInt)this.finalKills).getValue());
-        this.formattedStatList.add(finals);
-
-        StatString wlr = new StatString("WLR");
-        wlr.setValue(this.getWlrColor(this.getWlr(this)).toString() + this.getWlr(this));
-        this.formattedStatList.add(wlr);
-
-        StatString wins = new StatString("WINS");
-        wins.setValue(/* this sets the color >>*/ this.getWinsColor(((StatInt)this.wins).getValue()).toString() + /* this is what's actually displayed >>>*/ ((StatInt)this.wins).getValue());
-        this.formattedStatList.add(wins);
-
-        StatString bblr = new StatString("BBLR");
-        bblr.setValue(this.getBblrColor(this.getBblr(this)).toString() + this.getBblr(this));
-        this.formattedStatList.add(bblr);
-    }
-
     private void scheduleUrchinLookup() {
-        if (this.cachedUrchinTag != null) {
-            applyUrchinResult(this.cachedUrchinTag);
-            return;
-        }
-
         if (getActiveUrchinApiKey().isEmpty()) {
             return;
         }
 
         String identity = getLookupIdentity();
         if (identity == null) {
-            applyUrchinResult(createPendingTag());
             return;
         }
 
@@ -172,17 +92,28 @@ public class Bedwars extends BedwarsUtil {
             return;
         }
 
-        if (this.urchinLookupScheduled) {
+        if (!this.urchinLookupScheduled.compareAndSet(false, true)) {
             return;
         }
 
-        this.urchinLookupScheduled = true;
-        Handler.asExecutor(() -> {
-            enqueueUrchinLookup(identity, result -> {
-                this.urchinLookupScheduled = false;
+        enqueueUrchinLookup(identity, result -> {
+            this.urchinLookupScheduled.set(false);
+            if (result.isPending()) {
+                retryUrchinLookupLater();
+            } else {
                 applyUrchinResult(result);
-            });
+            }
         });
+    }
+
+    /** Urchin did not answer. The TAG cell stays empty until a later attempt gets through. */
+    private void retryUrchinLookupLater() {
+        if (this.urchinRetries >= URCHIN_MAX_RETRIES) {
+            return;
+        }
+
+        this.urchinRetries++;
+        Handler.schedule(this::scheduleUrchinLookup, URCHIN_RETRY_DELAY_MS * this.urchinRetries);
     }
 
     private void applyUrchinResult(CachedUrchinTag data) {
@@ -190,20 +121,11 @@ public class Bedwars extends BedwarsUtil {
             return;
         }
 
-        this.cachedUrchinTag = data;
-        StatString tag = this.tagStat;
-        if (tag != null) {
-            tag.setValue(data.getDisplayValue());
-        }
+        this.tagStat.setValue(data.getDisplayValue());
         announceTagIfNeeded(data);
     }
 
-    private String formatWsValue() {
-        if (!(this.winstreak instanceof StatInt)) {
-            return ChatColor.GRAY + "-";
-        }
-
-        StatInt wsStat = (StatInt) this.winstreak;
+    private String formatWsValue(StatInt wsStat) {
         if (!wsStat.isLoadedValue()) {
             return ChatColor.GRAY + "-";
         }
@@ -211,6 +133,4 @@ public class Bedwars extends BedwarsUtil {
         int value = wsStat.getValue();
         return this.getWSColor(value).toString() + value;
     }
-
-
 }

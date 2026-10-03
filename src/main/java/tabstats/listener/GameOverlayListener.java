@@ -1,12 +1,8 @@
 package tabstats.listener;
 
-import tabstats.TabStats;
 import tabstats.config.ModConfig;
-import tabstats.playerapi.HPlayer;
-import tabstats.playerapi.StatWorld;
-import tabstats.playerapi.api.stats.Stat;
+import tabstats.config.StatColumnLayout;
 import tabstats.render.StatsTab;
-import tabstats.util.ChatColor;
 import tabstats.util.Gamemodes;
 import tabstats.util.HypixelLocation;
 import tabstats.util.Reflect;
@@ -21,7 +17,6 @@ import net.weavemc.api.event.TickEvent;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class GameOverlayListener {
@@ -34,6 +29,8 @@ public class GameOverlayListener {
     private boolean overlayInjected = false;
     private GuiPlayerTabOverlay originalOverlay;
     private boolean modEnabled;
+    /** Refreshed every tick rather than every frame: asking for the key checks the config file. */
+    private boolean urchinKeySet;
 
     public GameOverlayListener() {
         this.statsTab = new StatsTab(this.mc, this.mc.ingameGUI);
@@ -61,6 +58,7 @@ public class GameOverlayListener {
         }
 
         syncModEnabled();
+        this.urchinKeySet = !ModConfig.getInstance().getUrchinApiKey().trim().isEmpty();
 
         /* Outside of games and pre-game lobbies the vanilla tab list stays in place. */
         if (this.modEnabled && Gamemodes.inSupportedGame()) {
@@ -95,29 +93,29 @@ public class GameOverlayListener {
             return false;
         }
 
-        StatWorld statWorld = TabStats.getTabStats().getStatWorld();
-        HPlayer theHPlayer = statWorld == null ? null : statWorld.getPlayerByUUID(this.mc.thePlayer.getUniqueID());
-
-        List<Stat> gameStatTitleList;
-        if (theHPlayer == null) {
-            gameStatTitleList = Collections.emptyList();
-        } else {
-            List<Stat> stats = theHPlayer.getFormattedGameStats(gamemode);
-            if (stats == null) {
-                gameStatTitleList = new ArrayList<>();
-            } else {
-                // Same layout the per-player rows go through, so headers and values stay aligned.
-                gameStatTitleList = ModConfig.getInstance().getStatColumns().apply(stats, gamemode);
-            }
-        }
-
-        int width = computeTabWidth(gameStatTitleList);
         ScoreObjective effectiveObjective = scoreObjective != null
                 ? scoreObjective
                 : (effectiveScoreboard == null ? null : effectiveScoreboard.getObjectiveInDisplaySlot(0));
 
-        this.statsTab.renderNewPlayerlist(width, effectiveScoreboard, effectiveObjective, gameStatTitleList, gamemode);
+        this.statsTab.renderNewPlayerlist(effectiveScoreboard, effectiveObjective, visibleColumns(gamemode), gamemode);
         return true;
+    }
+
+    /**
+     * The columns drawn for a gamemode: the layout's enabled ones, in its order. Taken from the
+     * layout instead of from the client player's own stats, so the headers do not go missing when
+     * those have not loaded, or the client player never played this mode.
+     */
+    private List<StatColumnLayout.Column> visibleColumns(String gamemode) {
+        List<StatColumnLayout.Column> all = ModConfig.getInstance().getStatColumns().getColumns(gamemode);
+        List<StatColumnLayout.Column> visible = new ArrayList<>(all.size());
+        for (StatColumnLayout.Column column : all) {
+            // TAG is only ever filled with an Urchin key
+            if (column.isEnabled() && (this.urchinKeySet || !"TAG".equals(column.getKey()))) {
+                visible.add(column);
+            }
+        }
+        return visible;
     }
 
     private void syncModEnabled() {
@@ -129,25 +127,6 @@ public class GameOverlayListener {
 
     private String resolveGamemode(Scoreboard scoreboard) {
         return Gamemodes.resolve(scoreboard);
-    }
-
-    private int computeTabWidth(List<Stat> stats) {
-        int width = (StatsTab.headSize + 2) * 2 + this.mc.fontRendererObj.getStringWidth(ChatColor.BOLD + "[YOUTUBE] WWWWWWWWWWWWWWWW") + 10 - 10;
-
-        for (Stat stat : stats) {
-            if (stat == null) {
-                continue;
-            }
-
-            String statName = stat.getStatName();
-            if (statName == null) {
-                continue;
-            }
-
-            width += this.mc.fontRendererObj.getStringWidth(ChatColor.BOLD + statName) + 10;
-        }
-
-        return width;
     }
 
     private static Field overlayField() {

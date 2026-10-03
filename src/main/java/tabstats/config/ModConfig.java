@@ -26,8 +26,8 @@ public class ModConfig {
     private String lastUrchinApiKey;
     private static ModConfig instance;
     private File configFile;
-    private boolean renderHeaderFooter = true;
-    private boolean modEnabled = true;
+    private volatile boolean renderHeaderFooter = true;
+    private volatile boolean modEnabled = true;
     private final StatColumnLayout statColumns = new StatColumnLayout();
     private long configLastLoaded = -1L;
 
@@ -47,23 +47,30 @@ public class ModConfig {
         return this.urchinApiKey == null ? "" : this.urchinApiKey;
     }
 
+    /**
+     * A key was changed in config.json by hand. This usually runs on a worker thread - whichever
+     * one asked for the key - so the recheck is handed to the client thread, which owns the
+     * player cache, the chat reveals and the tab list.
+     */
     private void onApiKeyChanged() {
-        // Clear cached player data when API key changes
-        try {
-            if (!isModEnabled()) {
-                return;
-            }
+        if (!isModEnabled()) {
+            return;
+        }
 
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null) {
+            return;
+        }
+
+        mc.addScheduledTask(() -> {
             tabstats.TabStats tabStats = tabstats.TabStats.getTabStats();
             if (tabStats != null && tabStats.getStatWorld() != null) {
                 tabStats.getStatWorld().recheckAllPlayers();
             }
-        } catch (Exception e) {
-            // Silent fail - don't spam console
-        }
+        });
     }
 
-    public void setApiKey(String key) {
+    public synchronized void setApiKey(String key) {
         // Only update if the key actually changed
         if (!normalizeKey(key).equals(normalizeKey(this.apiKey))) {
             this.apiKey = key;
@@ -72,7 +79,7 @@ public class ModConfig {
         }
     }
 
-    public void setUrchinApiKey(String key) {
+    public synchronized void setUrchinApiKey(String key) {
         if (!normalizeKey(key).equals(normalizeKey(this.urchinApiKey))) {
             this.urchinApiKey = key;
             this.lastUrchinApiKey = key;
@@ -108,8 +115,9 @@ public class ModConfig {
 
         long modified = file.lastModified();
         if (this.apiKey == null || this.urchinApiKey == null || modified != this.configLastLoaded) {
-            applyApiKeyFromDisk(getString(APIKEY));
-            applyUrchinKeyFromDisk(getString(URCHIN_API_KEY));
+            JsonObject config = readConfig();
+            applyApiKeyFromDisk(getString(config, APIKEY));
+            applyUrchinKeyFromDisk(getString(config, URCHIN_API_KEY));
             this.configLastLoaded = modified;
         }
     }
@@ -171,17 +179,20 @@ public class ModConfig {
         }
     }
 
-    public void loadConfigFromFile() {
+    private synchronized void loadConfigFromFile() {
         if (!getFile().exists()) {
             makeFile();
         }
-        apiKey = getString(APIKEY);
+
+        // One parse for every setting, instead of one per setting
+        JsonObject config = readConfig();
+        apiKey = getString(config, APIKEY);
         lastApiKey = apiKey;
-        urchinApiKey = getString(URCHIN_API_KEY);
+        urchinApiKey = getString(config, URCHIN_API_KEY);
         lastUrchinApiKey = urchinApiKey;
-        renderHeaderFooter = getBoolean(RENDER_HEADER_FOOTER, true);
-        modEnabled = getBoolean(MOD_ENABLED, true);
-        statColumns.loadFrom(getJsonObject(STAT_COLUMNS));
+        renderHeaderFooter = getBoolean(config, RENDER_HEADER_FOOTER, true);
+        modEnabled = getBoolean(config, MOD_ENABLED, true);
+        statColumns.loadFrom(getJsonObject(config, STAT_COLUMNS));
         configLastLoaded = getFile().lastModified();
     }
 
@@ -216,7 +227,7 @@ public class ModConfig {
         loadConfigFromFile();
     }
 
-    public void save() {
+    public synchronized void save() {
         LinkedHashMap<String, Object> map = new LinkedHashMap<>();
         map.put(MOD_ENABLED.toString(), this.modEnabled);
         map.put(RENDER_HEADER_FOOTER.toString(), this.renderHeaderFooter);
@@ -233,58 +244,41 @@ public class ModConfig {
         }
     }
 
-    public String getString(ModConfigNames key) {
-        File file = getFile();
-        if (!file.exists()) {
-            return "";
-        }
-
-        try (FileReader reader = new FileReader(file)) {
-            JsonObject object = new JsonParser().parse(reader).getAsJsonObject();
-            if (!object.has(key.toString())) {
-                return "";
-            }
-            return object.get(key.toString()).getAsString();
-        } catch (Exception ex) {
-            // Silently handle read errors
-            return "";
-        }
-    }
-
-    public JsonObject getJsonObject(ModConfigNames key) {
+    /** The whole config file, or null when it is missing or unreadable. */
+    private JsonObject readConfig() {
         File file = getFile();
         if (!file.exists()) {
             return null;
         }
 
         try (FileReader reader = new FileReader(file)) {
-            JsonObject object = new JsonParser().parse(reader).getAsJsonObject();
-            if (!object.has(key.toString())) {
-                return null;
-            }
-
-            JsonElement element = object.get(key.toString());
-            return element != null && element.isJsonObject() ? element.getAsJsonObject() : null;
+            JsonElement parsed = new JsonParser().parse(reader);
+            return parsed != null && parsed.isJsonObject() ? parsed.getAsJsonObject() : null;
         } catch (Exception ex) {
             // Silently handle read errors
             return null;
         }
     }
 
-    public boolean getBoolean(ModConfigNames key, boolean defaultValue) {
-        File file = getFile();
-        if (!file.exists()) {
+    private static String getString(JsonObject config, ModConfigNames key) {
+        JsonElement element = config == null ? null : config.get(key.toString());
+        return element != null && element.isJsonPrimitive() ? element.getAsString() : "";
+    }
+
+    private static JsonObject getJsonObject(JsonObject config, ModConfigNames key) {
+        JsonElement element = config == null ? null : config.get(key.toString());
+        return element != null && element.isJsonObject() ? element.getAsJsonObject() : null;
+    }
+
+    private static boolean getBoolean(JsonObject config, ModConfigNames key, boolean defaultValue) {
+        JsonElement element = config == null ? null : config.get(key.toString());
+        if (element == null || !element.isJsonPrimitive()) {
             return defaultValue;
         }
 
-        try (FileReader reader = new FileReader(file)) {
-            JsonObject object = new JsonParser().parse(reader).getAsJsonObject();
-            if (!object.has(key.toString())) {
-                return defaultValue;
-            }
-            return object.get(key.toString()).getAsBoolean();
-        } catch (Exception ex) {
-            // Silently handle read errors
+        try {
+            return element.getAsBoolean();
+        } catch (RuntimeException ex) {
             return defaultValue;
         }
     }

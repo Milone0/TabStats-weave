@@ -4,16 +4,14 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonSyntaxException;
 import org.apache.http.HttpEntity;
-import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.util.EntityUtils;
-import tabstats.util.References;
+import tabstats.util.BuildInfo;
 
+import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
@@ -23,24 +21,7 @@ import java.util.UUID;
  */
 public class MojangAPI {
     private static final String PROFILE_ENDPOINT = "https://api.mojang.com/users/profiles/minecraft/%s";
-    private static final String USER_AGENT = "TabStats/" + References.VERSION;
-    private static final PoolingHttpClientConnectionManager HTTP_CONN_MANAGER;
-    private static final CloseableHttpClient HTTP_CLIENT;
-
-    static {
-        HTTP_CONN_MANAGER = new PoolingHttpClientConnectionManager();
-        HTTP_CONN_MANAGER.setMaxTotal(8);
-        HTTP_CONN_MANAGER.setDefaultMaxPerRoute(8);
-
-        HTTP_CLIENT = HttpClients.custom()
-                .setConnectionManager(HTTP_CONN_MANAGER)
-                .setDefaultRequestConfig(RequestConfig.custom()
-                        .setConnectTimeout(5_000)
-                        .setSocketTimeout(5_000)
-                        .setConnectionRequestTimeout(5_000)
-                        .build())
-                .build();
-    }
+    private static final String USER_AGENT = "TabStats/" + BuildInfo.VERSION;
 
     /**
      * @param name player name as it appeared in chat
@@ -53,11 +34,19 @@ public class MojangAPI {
             return Profile.NOT_FOUND;
         }
 
-        HttpGet request = new HttpGet(String.format(PROFILE_ENDPOINT, name.trim()));
-        request.addHeader("Accept", "application/json");
-        request.addHeader("User-Agent", USER_AGENT);
+        try {
+            HttpGet request = new HttpGet(String.format(PROFILE_ENDPOINT, URLEncoder.encode(name.trim(), "UTF-8")));
+            request.addHeader("Accept", "application/json");
+            request.addHeader("User-Agent", USER_AGENT);
+            return execute(request, name);
+        } catch (Exception ex) {
+            // Network hiccup, throttling, anything else - let the caller try again later
+            return null;
+        }
+    }
 
-        try (CloseableHttpResponse response = HTTP_CLIENT.execute(request)) {
+    private static Profile execute(HttpGet request, String name) throws IOException {
+        try (CloseableHttpResponse response = Http.CLIENT.execute(request)) {
             int status = response.getStatusLine().getStatusCode();
             HttpEntity entity = response.getEntity();
 
@@ -92,9 +81,6 @@ public class MojangAPI {
 
             String resolvedName = object.has("name") ? object.get("name").getAsString() : name.trim();
             return new Profile(uuid, resolvedName);
-        } catch (Exception ex) {
-            // Network hiccup, throttling, anything else - let the caller try again later
-            return null;
         }
     }
 

@@ -1,8 +1,8 @@
 package tabstats.playerapi.api.games.duels;
 
+import com.google.gson.JsonObject;
 import tabstats.playerapi.api.games.HGameBase;
 import tabstats.playerapi.api.stats.StatInt;
-import tabstats.playerapi.api.stats.StatString;
 import tabstats.util.ChatColor;
 import org.apache.commons.lang3.text.WordUtils;
 
@@ -11,15 +11,6 @@ import java.util.Locale;
 public abstract class DuelsUtil extends HGameBase {
     public DuelsUtil(String playerName, String playerUUID) {
         super(playerName, playerUUID);
-    }
-
-    public double getWlr(Duels duels) {
-        try {
-            if (duels == null || duels.wins == null || duels.losses == null) return 0D;
-            return this.formatDouble(((StatInt)duels.wins).getValue(), ((StatInt)duels.losses).getValue());
-        } catch (Exception ignored) {
-            return 0D;
-        }
     }
 
     public ChatColor getWlrColor(double wlr) {
@@ -83,24 +74,24 @@ public abstract class DuelsUtil extends HGameBase {
         return ChatColor.GRAY;
     }
 
-    public String getFormattedTitle(Duels duels) {
-        String title = ((StatString)duels.title).getValue();
+    /** Gamemode names that contain an underscore themselves, so the last segment of a title is not enough. */
+    private static final String[] MULTI_WORD_MODES = {"no_debuff", "mega_walls", "tnt_games", "all_modes"};
+
+    /**
+     * @param title the raw {@code active_cosmetictitle}, e.g. {@code cosmetictitle_godlike_all_modes}
+     * @param duelJson the Duels stats, for the wins of the title's gamemode
+     */
+    protected String getFormattedTitle(String title, JsonObject duelJson) {
         String formattedTitle = title.replace("_", " ").replace("cosmetictitle", "");
 
         if (this.isPrestigeTitle(title)) {
-            String modeName = title.substring(title.lastIndexOf("_") + 1);;
+            String modeName = title.substring(title.lastIndexOf("_") + 1);
 
             /* Hypixel being extra difficult and changing the names of their gamemodes only for titles */
-            if (title.contains("no_debuff") || title.contains("mega_walls") || title.contains("tnt_games") || title.contains("all_modes")) {
-                /* probably an easier way of doing this, although I'm lazy ~Max */
-                if (title.contains("no_debuff")) {
-                    modeName = "no_debuff";
-                } else if (title.contains("mega_walls")) {
-                    modeName = "mega_walls";
-                } else if (title.contains("tnt_games")) {
-                    modeName = "tnt_games";
-                } else if (title.contains("all_modes")) {
-                    modeName = "all_modes";
+            for (String multiWordMode : MULTI_WORD_MODES) {
+                if (title.contains(multiWordMode)) {
+                    modeName = multiWordMode;
+                    break;
                 }
             }
 
@@ -108,15 +99,12 @@ public abstract class DuelsUtil extends HGameBase {
                 DuelsModes duelMode = DuelsModes.valueOf(modeName.toUpperCase(Locale.ROOT));
                 String gamemodeName = duelMode.getName();
 
-                // Safely pull wins json; if absent, fall back to formatted title
-                int gamemodeWins = 0;
-                try {
-                    if (duels.duelJson != null && duels.duelJson.has(duelMode.getWinsJson()) && !duels.duelJson.get(duelMode.getWinsJson()).isJsonNull()) {
-                        gamemodeWins = duels.duelJson.get(duelMode.getWinsJson()).getAsInt();
-                    }
-                } catch (Exception ignored) { gamemodeWins = 0; }
+                // If the wins are absent this stays 0, and the plain formatted title is shown
+                int gamemodeWins = new StatInt(gamemodeName, duelMode.getWinsJson(), duelJson).getValue();
 
-                int multiplier = title.toLowerCase(Locale.ROOT).contains("all modes") ? 2 : 1;
+                // All Modes titles take twice the wins of a single mode's. The raw title has
+                // underscores, so this has to compare against the mode, not "all modes".
+                int multiplier = "all_modes".equals(modeName) ? 2 : 1;
 
                 if (gamemodeWins >= 100000 * multiplier) {
                     return ChatColor.GOLD + gamemodeName + " World's Best";
@@ -141,8 +129,8 @@ public abstract class DuelsUtil extends HGameBase {
                 } else if (gamemodeWins >= 50 * multiplier) {
                     return ChatColor.GRAY + gamemodeName + " Rookie";
                 }
-            } catch (Throwable ignored) {
-                // Any failure (missing enum constant due to new Hypixel mode, classload issue, bad json) falls back to raw formatted title.
+            } catch (IllegalArgumentException ignored) {
+                // No enum constant for a gamemode Hypixel added later: fall back to the raw formatted title.
             }
         }
 
@@ -150,7 +138,7 @@ public abstract class DuelsUtil extends HGameBase {
     }
 
     private boolean isPrestigeTitle(String title) {
-        title = title.toUpperCase();
+        title = title.toUpperCase(Locale.ROOT);
         return title.contains("ROOKIE") || title.contains("IRON") || title.contains("GOLD") || title.contains("DIAMOND") || title.contains("MASTER") || title.contains("LEGEND") || title.contains("GRANDMASTER") || title.contains("GODLIKE") || title.contains("WORLD_ELITE") || title.contains("WORLD_MASTER") || title.contains("WORLDS_BEST");
     }
 }

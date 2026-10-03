@@ -8,14 +8,12 @@ import tabstats.config.ModConfig;
 import tabstats.listener.GameOverlayListener;
 import tabstats.util.ChatColor;
 import tabstats.util.Gamemodes;
-import tabstats.util.Handler;
 import tabstats.util.HypixelLocation;
 import tabstats.util.PartyTracker;
 import net.weavemc.api.event.SubscribeEvent;
 import net.weavemc.api.event.TickEvent;
 import net.minecraft.world.World;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -29,7 +27,7 @@ public class WorldLoader extends StatWorld {
 
     public boolean loadOrRender(EntityPlayer player) {
         if (player == null) return false;
-        
+
         UUID uuid = player.getUniqueID();
         if (uuid == null) {
             return false;
@@ -53,18 +51,13 @@ public class WorldLoader extends StatWorld {
         return version == 4 || version == 2 || version == 1;
     }
 
-    /** Handle version 1 UUIDs: always nicked. */
-    private void checkNickStatus(EntityPlayer entityPlayer) {
-        Handler.asExecutor(() -> {
-            if (!ModConfig.getInstance().isModEnabled()) {
-                return;
-            }
-            UUID uuid = entityPlayer.getUniqueID();
-            HPlayer hPlayer = new HPlayer(uuid.toString(), entityPlayer.getName());
-            hPlayer.setNicked(true);
-            this.addPlayer(uuid, hPlayer);
-            this.removeFromStatAssembly(uuid);
-        });
+    /** Version 1 UUIDs are always nicked on Hypixel, so there is nothing to ask the API. */
+    private void markNicked(EntityPlayer entityPlayer) {
+        UUID uuid = entityPlayer.getUniqueID();
+        HPlayer hPlayer = new HPlayer(uuid.toString().replace("-", ""), entityPlayer.getName());
+        hPlayer.setNicked(true);
+        this.addPlayer(uuid, hPlayer);
+        this.removeFromStatAssembly(uuid);
     }
 
     /* populates and checks the stat world player cache every client tick */
@@ -87,7 +80,6 @@ public class WorldLoader extends StatWorld {
 
         if (currentWorld != lastObservedWorld) {
             lastObservedWorld = currentWorld;
-            this.lastWorldJoinTime = System.currentTimeMillis();
             // A new world is a new Hypixel server, so where we are has to be asked again.
             HypixelLocation.reset();
             // Only reset scroll position on world change, preserve cache
@@ -111,73 +103,43 @@ public class WorldLoader extends StatWorld {
             return;
         }
 
+        boolean added = false;
         for (EntityPlayer entityPlayer : mc.theWorld.playerEntities) {
             UUID uuid = entityPlayer.getUniqueID();
 
-            if (!existedMoreThan5Seconds.contains(uuid)) {
-                timeCheck.putIfAbsent(uuid, 0);
-
-                int old = this.timeCheck.get(uuid);
-                if (old > 100) {
-                    if (!this.existedMoreThan5Seconds.contains(uuid)) {
-                        this.existedMoreThan5Seconds.add(uuid);
-                    }
-                } else {
-                    this.timeCheck.put(uuid, old + 1);
-                }
-            }
-
-            if (!loadOrRender(entityPlayer)) {
+            // The cheap checks first: nearly every player is already cached or on its way
+            if (uuid == null || this.getWorldPlayers().containsKey(uuid) || this.statAssembly.contains(uuid)) {
                 continue;
             }
 
-            if (this.getWorldPlayers().containsKey(uuid)) {
+            if (!loadOrRender(entityPlayer) || !this.statAssembly.add(uuid)) {
                 continue;
             }
 
-            if (!this.statAssembly.add(uuid)) {
-                continue;
-            }
-
-            if (uuid.version() == 4 || uuid.version() == 2) {
+            if (uuid.version() == 1) {
+                this.markNicked(entityPlayer);
+            } else {
                 this.fetchStats(entityPlayer);
-            } else if (uuid.version() == 1) {
-                this.checkNickStatus(entityPlayer);
             }
-            this.checkCacheSize();
+            added = true;
+        }
+
+        if (added) {
+            checkCacheSize();
         }
     }
 
-    public void checkCacheSize() {
-        if (getWorldPlayers().size() > 500) {
-            Set<UUID> safePlayers = new HashSet<>();
-            for (EntityPlayer player : mc.theWorld.playerEntities) {
-                UUID uuid = player.getUniqueID();
-                if (this.existedMoreThan5Seconds.contains(uuid)) {
-                    safePlayers.add(uuid);
-                }
-            }
-
-            // Chat-revealed players have no entity, so keep them out of the eviction
-            safePlayers.addAll(this.getChatRevealedUuids());
-
-            this.existedMoreThan5Seconds.clear();
-            this.existedMoreThan5Seconds.addAll(safePlayers);
-
-            for (UUID playerUUID : new ArrayList<>(this.getWorldPlayers().keySet())) {
-                if (!safePlayers.contains(playerUUID)) {
-                    this.removePlayer(playerUUID);
-                }
-            }
+    /** Past the bound, keeps only the players that are in this world (and the chat reveals). */
+    private void checkCacheSize() {
+        if (getWorldPlayers().size() <= MAX_CACHED_PLAYERS) {
+            return;
         }
-    }
 
-    public void onDelete() {
-        this.clearPlayers();
-        this.existedMoreThan5Seconds.clear();
-        lastObservedWorld = null;
-        this.lastWorldJoinTime = 0L;
-        resetTabScroll();
+        Set<UUID> present = new HashSet<>();
+        for (EntityPlayer player : mc.theWorld.playerEntities) {
+            present.add(player.getUniqueID());
+        }
+        retainPlayers(present);
     }
 
     private void resetTabScroll() {

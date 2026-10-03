@@ -289,7 +289,10 @@ public class GameStatsCommand extends Command {
         return false;
     }
 
-    /** Shorter than the shortest Minecraft name, so no player can be meant by it. */
+    /**
+     * "p" is shorter than any Minecraft name. "party" is not - a player of that name cannot be
+     * looked up by it, which is the price of the longer spelling.
+     */
     private boolean isPartyToken(String name) {
         return "p".equalsIgnoreCase(name) || "party".equalsIgnoreCase(name);
     }

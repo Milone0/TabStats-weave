@@ -1,7 +1,7 @@
 package tabstats.render;
 
 import tabstats.TabStats;
-import tabstats.config.ModConfig;
+import tabstats.config.StatColumnLayout;
 import tabstats.playerapi.ChatRevealedPlayer;
 import tabstats.playerapi.HPlayer;
 import tabstats.playerapi.StatWorld;
@@ -68,8 +68,15 @@ public class StatsTab extends GuiPlayerTabOverlay {
     private int maxVisiblePlayers = 0;
     private final float scrollSpeed = 0.2f; // Animation smoothness factor
     private int lastPlayerListSize = 0;
+    /** When this list was last drawn, so the scroll wheel only acts while it is on screen. */
+    private long lastRenderedAt;
     /** Tab entries the mod makes up for players that only chat revealed, keyed by their UUID. */
     private final Map<UUID, NetworkPlayerInfo> syntheticInfos = new HashMap<>();
+    /** Pixel widths of stat values. They hardly change between frames, and measuring is not free. */
+    private final Map<String, Integer> textWidths = new HashMap<>();
+    private static final int MAX_CACHED_WIDTHS = 4096;
+    /** The vanilla copies of these are private, so the hearts animation keeps its own. */
+    private boolean beingRendered;
 
     public StatsTab(Minecraft mcIn, GuiIngame guiIngameIn) {
         super(mcIn, guiIngameIn);
@@ -98,6 +105,15 @@ public class StatsTab extends GuiPlayerTabOverlay {
         super.resetFooterHeader();
         this.header = null;
         this.footer = null;
+    }
+
+    @Override
+    public void updatePlayerList(boolean willBeRendered) {
+        super.updatePlayerList(willBeRendered);
+        if (willBeRendered && !this.beingRendered) {
+            this.lastTimeOpened = Minecraft.getSystemTime();
+        }
+        this.beingRendered = willBeRendered;
     }
     
     /**
@@ -137,27 +153,28 @@ public class StatsTab extends GuiPlayerTabOverlay {
     /**
      * Handles mouse wheel input for scrolling
      * @param wheelDelta The scroll wheel delta (positive = scroll up, negative = scroll down)
-     * @param playerListSize Total number of players in the list
+     * @return true when the list is on screen and long enough to scroll, so the wheel belongs to
+     *         it - and must not also switch the hotbar slot
      */
-    public void handleMouseWheel(int wheelDelta, int playerListSize) {
-        if (maxVisiblePlayers <= 0) {
-            return;
-        }
-
-        int effectiveListSize = this.lastPlayerListSize > 0 ? this.lastPlayerListSize : Math.min(playerListSize, MAX_TAB_PLAYERS);
-
-        if (maxVisiblePlayers >= effectiveListSize) {
-            // No need to scroll if all players fit on screen
-            return;
+    public boolean handleMouseWheel(int wheelDelta) {
+        if (!isShowing() || maxVisiblePlayers <= 0 || maxVisiblePlayers >= this.lastPlayerListSize) {
+            // Not drawn right now, or all players fit on screen
+            return false;
         }
 
         // Scroll by 1 player per wheel notch
         targetScrollOffset += wheelDelta > 0 ? -1 : 1;
 
         // Clamp to valid bounds derived from the last rendered list size
-        targetScrollOffset = MathHelper.clamp_float(targetScrollOffset, 0, Math.max(0, effectiveListSize - maxVisiblePlayers));
+        targetScrollOffset = MathHelper.clamp_float(targetScrollOffset, 0, Math.max(0, this.lastPlayerListSize - maxVisiblePlayers));
+        return true;
     }
-    
+
+    /** Whether this list was drawn a moment ago, i.e. the tab key is held in a supported game. */
+    public boolean isShowing() {
+        return Minecraft.getSystemTime() - this.lastRenderedAt < 250L;
+    }
+
     /**
      * Resets scroll position to top
      */
@@ -166,7 +183,13 @@ public class StatsTab extends GuiPlayerTabOverlay {
         targetScrollOffset = 0.0f;
     }
     
-    public void renderNewPlayerlist(int width, Scoreboard scoreboardIn, ScoreObjective scoreObjectiveIn, List<Stat> gameStatTitleList, String gamemode) {
+    /**
+     * @param columns the stat columns to draw, in order. They come from the column layout rather
+     *                than from anyone's stats, so the headers are there no matter whose stats
+     *                have loaded, and each value is drawn under the column of the same name.
+     */
+    public void renderNewPlayerlist(Scoreboard scoreboardIn, ScoreObjective scoreObjectiveIn, List<StatColumnLayout.Column> columns, String gamemode) {
+        this.lastRenderedAt = Minecraft.getSystemTime();
         NetHandlerPlayClient netHandler = this.mc.thePlayer.sendQueue;
         StatWorld statWorld = TabStats.getTabStats().getStatWorld();
         List<NetworkPlayerInfo> playerList = collectEligiblePlayers(netHandler, statWorld);
@@ -190,10 +213,27 @@ public class StatsTab extends GuiPlayerTabOverlay {
             objectiveName = WordUtils.capitalize(scoreObjectiveIn.getDisplayName().replace("_", ""));
         }
         int objectiveLabelWidth = objectiveName.isEmpty() ? 0 : 5 + this.mc.fontRendererObj.getStringWidth(objectiveName);
+        if (scoreObjectiveIn != null && scoreObjectiveIn.getRenderType() == IScoreObjectiveCriteria.EnumRenderType.HEARTS) {
+            // Health is drawn inside the objective column, which needs the room for it
+            objectiveLabelWidth = Math.max(objectiveLabelWidth, 5 + this.mc.fontRendererObj.getStringWidth("20.0hp"));
+        }
 
         playerList = playerList.subList(0, Math.min(playerList.size(), MAX_TAB_PLAYERS));
         int playerListSize = playerList.size();
         this.lastPlayerListSize = playerListSize;
+
+        // Every row is resolved up front: the column widths depend on all of them
+        List<Row> rows = new ArrayList<>(playerListSize);
+        for (NetworkPlayerInfo playerInfo : playerList) {
+            rows.add(resolveRow(playerInfo, statWorld, chatRows, gamemode));
+        }
+
+        int nameColumnWidth = this.mc.fontRendererObj.getStringWidth(MAX_RANK_SAMPLE) + 10;
+        List<StatColumn> statColumns = buildStatColumns(columns, rows);
+        int width = headSize + 2 + nameColumnWidth + 4;
+        for (StatColumn column : statColumns) {
+            width += column.width;
+        }
 
         this.maxVisiblePlayers = calculateMaxVisiblePlayers(scaledRes, startingY, footerHeight, footerSpacing);
 
@@ -206,8 +246,8 @@ public class StatsTab extends GuiPlayerTabOverlay {
 
         int startIndex = Math.max(0, Math.min((int)Math.floor(scrollOffset), playerListSize - maxVisiblePlayers));
         int endIndex = Math.min(playerListSize, startIndex + maxVisiblePlayers);
-        List<NetworkPlayerInfo> visiblePlayers = playerList.subList(startIndex, endIndex);
-        int visiblePlayerCount = visiblePlayers.size();
+        List<Row> visibleRows = rows.subList(startIndex, endIndex);
+        int visiblePlayerCount = visibleRows.size();
 
         width = Math.max(width, Math.max(headerBlock.getMaxWidth(), footerBlock.getMaxWidth()));
 
@@ -232,11 +272,9 @@ public class StatsTab extends GuiPlayerTabOverlay {
         drawCenteredLines(headerBlock, baseY, contentCenterX, fontHeight, textColor);
 
         int nameColumnStartX = startingX + headSize + 2;
-        int nameColumnWidth = this.mc.fontRendererObj.getStringWidth(MAX_RANK_SAMPLE) + 10;
         this.mc.fontRendererObj.drawStringWithShadow(ChatColor.BOLD + "NAME", nameColumnStartX, startingY + textBaselineOffset, textColor);
         this.mc.fontRendererObj.drawStringWithShadow(objectiveName, startingX - objectiveLabelWidth, startingY + textBaselineOffset, textColor);
 
-        List<StatColumn> statColumns = buildStatColumns(gameStatTitleList);
         int statColumnStartX = nameColumnStartX + nameColumnWidth;
         drawStatHeaders(statColumns, statColumnStartX, startingY + textBaselineOffset, textColor);
 
@@ -251,7 +289,8 @@ public class StatsTab extends GuiPlayerTabOverlay {
                 (scaledRes.getScaledHeight() - headerBottomY) * scaledRes.getScaleFactor()
         );
 
-        for (NetworkPlayerInfo playerInfo : visiblePlayers) {
+        for (Row row : visibleRows) {
+            NetworkPlayerInfo playerInfo = row.info;
             int xSpacer = startingX;
             drawRect(xSpacer, ySpacer, contentRight, ySpacer + this.entryHeight, 553648127);
 
@@ -262,7 +301,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
 
             String name = this.getPlayerName(playerInfo);
             GameProfile gameProfile = playerInfo.getGameProfile();
-            ChatRevealedPlayer chatRow = chatRows.get(gameProfile.getId());
+            ChatRevealedPlayer chatRow = row.chatRow;
             /* A nicked player's UUID is a local placeholder, so no skin can be loaded for it. */
             boolean hasSkin = chatRow == null || chatRow.hasRealProfile();
 
@@ -282,11 +321,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
             xSpacer += headSize + 2;
 
             if (playerInfo.getGameType() != WorldSettings.GameType.SPECTATOR) {
-                HPlayer hPlayer = statWorld == null ? null : statWorld.getPlayerByIdentity(
-                        gameProfile.getId(),
-                        playerInfo.getDisplayName() != null ? playerInfo.getDisplayName().getFormattedText() : null,
-                        gameProfile.getName()
-                );
+                HPlayer hPlayer = row.hPlayer;
                 if (hPlayer != null) {
                     if (hPlayer.isNicked()) {
                         name = this.getHPlayerName(playerInfo, hPlayer);
@@ -299,12 +334,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
                     }
                     /* Otherwise keep the name exactly as the server sent it, original team colors included. */
 
-                    if (gamemode != null) {
-                        List<Stat> statList = resolveStats(hPlayer, gamemode);
-                        if (!statList.isEmpty()) {
-                            drawPlayerStats(statList, statColumns, statColumnStartX, ySpacer + textBaselineOffset, textColor);
-                        }
-                    }
+                    drawPlayerStats(row.stats, statColumns, statColumnStartX, ySpacer + textBaselineOffset, textColor);
                 }
 
                 if (chatRow != null) {
@@ -316,7 +346,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
 
             /* Chat-revealed players are not on the scoreboard, so there is nothing to draw for them. */
             if (scoreObjectiveIn != null && chatRow == null && playerInfo.getGameType() != WorldSettings.GameType.SPECTATOR) {
-                this.drawScoreboardValues(scoreObjectiveIn, ySpacer, gameProfile.getName(), xSpacer, startingX - 5, playerInfo);
+                this.drawScoreboardValues(scoreObjectiveIn, ySpacer, gameProfile.getName(), startingX - objectiveLabelWidth, startingX - 5, playerInfo);
             }
 
             ySpacer += this.entryHeight + 1;
@@ -343,6 +373,28 @@ public class StatsTab extends GuiPlayerTabOverlay {
 
         int footerY = startingY + playerSectionHeight + footerSpacing;
         drawCenteredLines(footerBlock, footerY, contentCenterX, fontHeight, textColor);
+    }
+
+    /** Looks a row's player up once per frame; spectators get no stats, as before. */
+    private Row resolveRow(NetworkPlayerInfo playerInfo, StatWorld statWorld, Map<UUID, ChatRevealedPlayer> chatRows, String gamemode) {
+        GameProfile gameProfile = playerInfo.getGameProfile();
+        ChatRevealedPlayer chatRow = chatRows.get(gameProfile.getId());
+        if (statWorld == null || playerInfo.getGameType() == WorldSettings.GameType.SPECTATOR) {
+            return new Row(playerInfo, null, chatRow, Collections.<String, Stat>emptyMap());
+        }
+
+        IChatComponent displayName = playerInfo.getDisplayName();
+        HPlayer hPlayer = statWorld.getPlayerByIdentity(
+                gameProfile.getId(),
+                displayName != null ? displayName.getFormattedText() : null,
+                gameProfile.getName()
+        );
+
+        // Only the current gamemode's stats: someone without any shows just their name
+        Map<String, Stat> stats = hPlayer == null || gamemode == null
+                ? Collections.<String, Stat>emptyMap()
+                : hPlayer.getGameStatsByKey(gamemode);
+        return new Row(playerInfo, hPlayer, chatRow, stats);
     }
 
     private TextBlock createTextBlock(IChatComponent component) {
@@ -374,19 +426,27 @@ public class StatsTab extends GuiPlayerTabOverlay {
         }
     }
 
-    private List<StatColumn> buildStatColumns(List<Stat> stats) {
-        if (stats == null || stats.isEmpty()) {
+    /** Each column is as wide as its header or its widest value, whichever is wider. */
+    private List<StatColumn> buildStatColumns(List<StatColumnLayout.Column> columns, List<Row> rows) {
+        if (columns == null || columns.isEmpty()) {
             return Collections.emptyList();
         }
 
-        List<StatColumn> columns = new ArrayList<>(stats.size());
-        for (Stat stat : stats) {
-            String label = formatStatLabel(stat);
-            int columnWidth = this.mc.fontRendererObj.getStringWidth(label) + 10;
-            columns.add(new StatColumn(label, columnWidth));
+        List<StatColumn> statColumns = new ArrayList<>(columns.size());
+        for (StatColumnLayout.Column column : columns) {
+            String key = column.getKey();
+            String label = ChatColor.BOLD + key;
+            int widest = textWidth(label);
+            for (Row row : rows) {
+                Stat stat = row.stats.get(key);
+                if (stat != null) {
+                    widest = Math.max(widest, textWidth(StatFormatting.valueOf(stat)));
+                }
+            }
+            statColumns.add(new StatColumn(key, label, widest + 10));
         }
 
-        return columns;
+        return statColumns;
     }
 
     private void drawStatHeaders(List<StatColumn> columns, int startX, int y, int color) {
@@ -397,47 +457,31 @@ public class StatsTab extends GuiPlayerTabOverlay {
         }
     }
 
-    private void drawPlayerStats(List<Stat> stats, List<StatColumn> columns, int startX, int baselineY, int color) {
+    /** Draws each stat under the column of the same name; a column the player has nothing for stays empty. */
+    private void drawPlayerStats(Map<String, Stat> stats, List<StatColumn> columns, int startX, int baselineY, int color) {
         int x = startX;
-        for (int i = 0; i < stats.size(); i++) {
-            Stat stat = stats.get(i);
-            this.mc.fontRendererObj.drawStringWithShadow(formatStatValue(stat), x, baselineY, color);
-            int columnWidth = i < columns.size() ? columns.get(i).width : measureColumnWidth(stat);
-            x += columnWidth;
+        for (StatColumn column : columns) {
+            Stat stat = stats.get(column.key);
+            if (stat != null) {
+                this.mc.fontRendererObj.drawStringWithShadow(StatFormatting.valueOf(stat), x, baselineY, color);
+            }
+            x += column.width;
         }
     }
 
-    private List<Stat> resolveStats(HPlayer player, String gamemode) {
-        if (player == null || gamemode == null) {
-            return Collections.emptyList();
+    private int textWidth(String text) {
+        Integer cached = this.textWidths.get(text);
+        if (cached != null) {
+            return cached;
         }
 
-        String layoutGamemode = gamemode;
-        List<Stat> stats = player.getFormattedGameStats(gamemode);
-        if (stats == null || stats.isEmpty()) {
-            stats = player.getFormattedGameStats("BEDWARS");
-            layoutGamemode = "BEDWARS";
+        if (this.textWidths.size() >= MAX_CACHED_WIDTHS) {
+            this.textWidths.clear();
         }
 
-        if (stats == null || stats.isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        return ModConfig.getInstance().getStatColumns().apply(stats, layoutGamemode);
-    }
-
-    private String formatStatValue(Stat stat) {
-        return StatFormatting.valueOf(stat);
-    }
-
-    private String formatStatLabel(Stat stat) {
-        String statName = stat == null ? "" : stat.getStatName();
-        String normalized = statName == null ? "" : statName.toUpperCase();
-        return ChatColor.BOLD + normalized;
-    }
-
-    private int measureColumnWidth(Stat stat) {
-        return this.mc.fontRendererObj.getStringWidth(formatStatLabel(stat)) + 10;
+        int width = this.mc.fontRendererObj.getStringWidth(text);
+        this.textWidths.put(text, width);
+        return width;
     }
 
     /**
@@ -686,12 +730,29 @@ public class StatsTab extends GuiPlayerTabOverlay {
     }
 
     private static final class StatColumn {
+        private final String key;
         private final String label;
         private final int width;
 
-        private StatColumn(String label, int width) {
+        private StatColumn(String key, String label, int width) {
+            this.key = key;
             this.label = label;
             this.width = width;
+        }
+    }
+
+    /** One tab entry with everything the draw loop needs to know about it. */
+    private static final class Row {
+        private final NetworkPlayerInfo info;
+        private final HPlayer hPlayer;
+        private final ChatRevealedPlayer chatRow;
+        private final Map<String, Stat> stats;
+
+        private Row(NetworkPlayerInfo info, HPlayer hPlayer, ChatRevealedPlayer chatRow, Map<String, Stat> stats) {
+            this.info = info;
+            this.hPlayer = hPlayer;
+            this.chatRow = chatRow;
+            this.stats = stats;
         }
     }
 
@@ -706,19 +767,13 @@ public class StatsTab extends GuiPlayerTabOverlay {
         }
     }
 
-    /* Custom Player Name Formatter */
+    /* Name of a nicked player: the tag stays white, but the nick itself keeps the team color so teams stay readable. */
     public String getHPlayerName(NetworkPlayerInfo playerInfo, HPlayer hPlayer) {
-        if (hPlayer.isNicked()) {
-            ScorePlayerTeam team = playerInfo.getPlayerTeam();
-            String teamPrefix = team != null ? team.getColorPrefix() : "";
-            String teamSuffix = team != null ? team.getColorSuffix() : "";
-            /* The tag stays white, but the nick itself keeps the team color so teams stay readable. */
-            String nameColor = teamPrefix.isEmpty() ? ChatColor.WHITE.toString() : teamPrefix;
-            return ChatColor.WHITE + "[" + ChatColor.RED + "NICKED" + ChatColor.WHITE + "] " + nameColor + playerInfo.getGameProfile().getName() + teamSuffix;
-        }
-
-        /* Everyone else is drawn with the server's own formatting, so the team colors stay intact. */
-        return this.getPlayerName(playerInfo);
+        ScorePlayerTeam team = playerInfo.getPlayerTeam();
+        String teamPrefix = team != null ? team.getColorPrefix() : "";
+        String teamSuffix = team != null ? team.getColorSuffix() : "";
+        String nameColor = teamPrefix.isEmpty() ? ChatColor.WHITE.toString() : teamPrefix;
+        return ChatColor.WHITE + "[" + ChatColor.RED + "NICKED" + ChatColor.WHITE + "] " + nameColor + playerInfo.getGameProfile().getName() + teamSuffix;
     }
 
     /**

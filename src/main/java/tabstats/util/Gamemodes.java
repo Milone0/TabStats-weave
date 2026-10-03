@@ -4,6 +4,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.scoreboard.ScoreObjective;
 import net.minecraft.scoreboard.Scoreboard;
 
+import java.util.Locale;
+
 /**
  * Resolves the Hypixel game the client is currently in from the scoreboard sidebar title,
  * which is the only signal the mod has. Returns one of the gamemode names the stat classes
@@ -29,7 +31,7 @@ public final class Gamemodes {
             return null;
         }
 
-        String normalized = stripped.replace(" ", "").toUpperCase();
+        String normalized = stripped.replace(" ", "").toUpperCase(Locale.ROOT);
         if ("BEDWARS".equals(normalized) || "DUELS".equals(normalized) || "SKYWARS".equals(normalized)) {
             return normalized;
         }
