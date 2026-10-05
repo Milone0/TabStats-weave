@@ -40,6 +40,13 @@ public class StatWorld {
             Collections.synchronizedMap(new LinkedHashMap<String, ChatRevealedPlayer>());
     private final Set<String> chatLookupsInFlight = ConcurrentHashMap.newKeySet();
     /**
+     * When the current world was joined. A new world is a new game, and stats loaded before it
+     * miss whatever has been played since - the winstreak above all.
+     */
+    private volatile long worldJoinedAt = System.currentTimeMillis();
+    /** Players already loaded again in this world, so a reload that fails is not retried every tick. */
+    private final Set<UUID> refreshed = ConcurrentHashMap.newKeySet();
+    /**
      * Bumped whenever the chat reveals are dropped, so a lookup that started in the lobby before
      * cannot add its player to the next one. Guarded by {@link #chatRevealed}.
      */
@@ -64,6 +71,32 @@ public class StatWorld {
         clearChatRevealed();
         statAssembly.clear();
         nameAliases.clear();
+        refreshed.clear();
+    }
+
+    /**
+     * Called on every world change. Everything loaded so far stays on screen, but counts as
+     * outdated from now on and is loaded again as the players show up.
+     */
+    public void startNewWorld() {
+        this.worldJoinedAt = System.currentTimeMillis();
+        this.refreshed.clear();
+        // Names picked up from chat belong to the lobby just left
+        clearChatRevealed();
+    }
+
+    /** Whether a player's stats were loaded before the current world, so before the game being played. */
+    public boolean isOutdated(HPlayer player) {
+        return !player.isNicked() && player.getLoadedAt() < this.worldJoinedAt;
+    }
+
+    /**
+     * Claims the one reload an outdated player gets per world; the old stats stay on screen
+     * until the new ones are in. False when there is nothing to reload or a load is under way.
+     */
+    protected boolean claimRefresh(UUID uuid, HPlayer player) {
+        return isOutdated(player) && !this.statAssembly.contains(uuid)
+                && this.refreshed.add(uuid) && this.statAssembly.add(uuid);
     }
 
     /**
@@ -167,7 +200,7 @@ public class StatWorld {
         }
 
         HPlayer existing = getPlayerByIdentity(uuid, displayComponent, playerName);
-        if (existing != null) {
+        if (existing != null && !isOutdated(existing)) {
             cachePlayer(uuid, existing, displayComponent);
             return;
         }
@@ -175,8 +208,15 @@ public class StatWorld {
         /* Just fetched for a chat command - Hypixel would refuse to hand the same player out again this soon. */
         HPlayer lookedUp = PlayerLookup.getRecentByUuid(uuid);
         if (lookedUp != null) {
-            cachePlayer(uuid, lookedUp, playerName, displayComponent);
-            return;
+            if (!isOutdated(lookedUp)) {
+                cachePlayer(uuid, lookedUp, playerName, displayComponent);
+                return;
+            }
+
+            if (existing == null) {
+                // From before this game, but better than nothing while the new stats load
+                this.addPlayer(uuid, lookedUp);
+            }
         }
 
         String playerUUID = uuid.toString().replace("-", "");
@@ -226,6 +266,13 @@ public class StatWorld {
         if (attempt >= MAX_API_RETRIES) {
             // Out of retries: show them as a player without stats rather than not at all
             Log.warn("Giving up on the stats of " + playerName + " after " + (attempt + 1) + " attempts");
+            if (getPlayerByUUID(uuid) != null) {
+                // A failed reload: the stats from an earlier game stay, and are not asked for again in this world
+                this.refreshed.add(uuid);
+                this.removeFromStatAssembly(uuid);
+                return;
+            }
+
             HPlayer bare = new HPlayer(uuid.toString().replace("-", ""), playerName);
             cachePlayer(uuid, bare, playerName, displayComponent);
             return;
@@ -269,6 +316,10 @@ public class StatWorld {
             UUID knownUuid = parseUuid(known.getPlayerUUID());
             if (knownUuid != null) {
                 this.chatRevealed.put(key, new ChatRevealedPlayer(knownUuid, known.getPlayerName(), !known.isNicked()));
+                // Without an entity the tick never sees them, so stats from an earlier game are reloaded here
+                if (claimRefresh(knownUuid, known)) {
+                    fetchStatsWithRetry(knownUuid, known.getPlayerName(), null, 0, 0L);
+                }
             }
             return;
         }

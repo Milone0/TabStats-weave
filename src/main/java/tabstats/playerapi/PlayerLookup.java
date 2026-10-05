@@ -203,7 +203,19 @@ public final class PlayerLookup {
         }
 
         HPlayer player = statWorld.getPlayerByName(name);
-        return player != null && !player.isNicked() && player.hasGameData() ? player : null;
+        return player != null && !player.isNicked() && player.hasGameData() && isCurrent(player) ? player : null;
+    }
+
+    /**
+     * Whether stats are recent enough to hand out: loaded in the current world, so no game has
+     * ended since. Older ones still count while Hypixel would refuse to hand the player out again.
+     */
+    private static boolean isCurrent(HPlayer player) {
+        TabStats tabStats = TabStats.getTabStats();
+        StatWorld statWorld = tabStats == null ? null : tabStats.getStatWorld();
+        return statWorld == null
+                || !statWorld.isOutdated(player)
+                || System.currentTimeMillis() - player.getLoadedAt() < HypixelAPI.PLAYER_COOLDOWN_MS;
     }
 
     private static HPlayer fromCache(String name) {
@@ -218,7 +230,7 @@ public final class PlayerLookup {
             return null;
         }
 
-        return cached.player;
+        return isCurrent(cached.player) ? cached.player : null;
     }
 
     private static void remember(String name, HPlayer player) {
