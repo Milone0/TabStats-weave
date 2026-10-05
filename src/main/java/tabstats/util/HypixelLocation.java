@@ -18,6 +18,10 @@ import java.util.Locale;
  *
  * <p>One request goes out per world the client joins, retried a few times if the answer is lost.
  * If Hypixel never answers, the mod falls back to the scoreboard alone rather than staying dark.
+ *
+ * <p>Every request sent is counted until its answer comes back, so that each one is hidden from
+ * the chat - also an answer that is merely late and arrives after a retry already went out, or
+ * after the world it was asked from has been left.
  */
 public final class HypixelLocation {
     /** How long to wait for an answer before asking again. */
@@ -25,6 +29,8 @@ public final class HypixelLocation {
     /** The server ignores commands sent in the same breath as the world change. */
     private static final long JOIN_GRACE_MS = 1_000L;
     private static final int MAX_ATTEMPTS = 3;
+    /** How long a request can still be answered; anything later was asked by someone else. */
+    private static final long ANSWER_WINDOW_MS = 10_000L;
 
     private static volatile String gametype;
     private static volatile String mode;
@@ -35,6 +41,12 @@ public final class HypixelLocation {
     private static volatile int attempts;
     private static volatile long lastRequest;
     private static volatile long worldJoinTime;
+    /** Requests asked from the current world whose answer has not come back yet. */
+    private static volatile int pending;
+    /** Requests asked from a world already left: their answers are hidden, but describe the old server. */
+    private static volatile int stale;
+    /** When the last request went out. Unlike {@link #lastRequest}, it survives a world change. */
+    private static volatile long lastSent;
 
     private HypixelLocation() {
     }
@@ -50,6 +62,8 @@ public final class HypixelLocation {
         attempts = 0;
         lastRequest = 0L;
         worldJoinTime = System.currentTimeMillis();
+        stale += pending;
+        pending = 0;
     }
 
     /** Sends {@code /locraw} when an answer is due. Call from the client tick. */
@@ -82,7 +96,9 @@ public final class HypixelLocation {
         }
 
         lastRequest = now;
+        lastSent = now;
         attempts++;
+        pending++;
         mc.thePlayer.sendChatMessage("/locraw");
     }
 
@@ -92,7 +108,7 @@ public final class HypixelLocation {
      * @return true when the line was the answer to our own request and should not reach the chat.
      */
     public static boolean handleChatMessage(String rawMessage) {
-        if (rawMessage == null || resolved || lastRequest == 0L) {
+        if (rawMessage == null || !expectingAnswer()) {
             return false;
         }
 
@@ -117,6 +133,14 @@ public final class HypixelLocation {
             return false;
         }
 
+        /* Answers come back in the order they were asked, so the old world's ones are first. */
+        if (stale > 0) {
+            stale--;
+            return true;
+        }
+
+        /* A late answer to an earlier try still describes this same server, so it may overwrite. */
+        pending--;
         server = asString(json, "server");
         gametype = asString(json, "gametype");
         mode = asString(json, "mode");
@@ -177,6 +201,22 @@ public final class HypixelLocation {
 
         return "server=" + server + " gametype=" + gametype + " mode=" + mode + " map=" + map
                 + " lobbyname=" + lobbyName + " -> " + (inGame() ? "game" : "lobby");
+    }
+
+    /** Whether a request of the mod is still waiting for its answer. */
+    private static boolean expectingAnswer() {
+        if (pending <= 0 && stale <= 0) {
+            return false;
+        }
+
+        if (System.currentTimeMillis() - lastSent > ANSWER_WINDOW_MS) {
+            // Lost on the way: a /locraw answered now was typed by the player or another mod.
+            pending = 0;
+            stale = 0;
+            return false;
+        }
+
+        return true;
     }
 
     private static String asString(JsonObject json, String key) {
