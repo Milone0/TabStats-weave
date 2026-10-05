@@ -24,7 +24,7 @@ public class HypixelAPI {
     private static final long DEFAULT_KEY_THROTTLE_MS = 10_000L;
     private static final long DEFAULT_GLOBAL_THROTTLE_MS = 30_000L;
     /** Hypixel refuses the same player again for about a minute. */
-    private static final long PLAYER_COOLDOWN_MS = 60_000L;
+    public static final long PLAYER_COOLDOWN_MS = 60_000L;
 
     /**
      * No request goes out before this moment. One throttle answer closes the gate for every

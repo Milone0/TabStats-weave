@@ -84,8 +84,8 @@ public class WorldLoader extends StatWorld {
             HypixelLocation.reset();
             // Only reset scroll position on world change, preserve cache
             resetTabScroll();
-            // Names picked up from chat belong to the lobby we just left
-            this.clearChatRevealed();
+            // A new game: the cached stats are kept on screen but loaded again
+            this.startNewWorld();
         }
 
         if (mc.theWorld == null || mc.thePlayer == null) {
@@ -106,9 +106,21 @@ public class WorldLoader extends StatWorld {
         boolean added = false;
         for (EntityPlayer entityPlayer : mc.theWorld.playerEntities) {
             UUID uuid = entityPlayer.getUniqueID();
+            if (uuid == null) {
+                continue;
+            }
 
             // The cheap checks first: nearly every player is already cached or on its way
-            if (uuid == null || this.getWorldPlayers().containsKey(uuid) || this.statAssembly.contains(uuid)) {
+            HPlayer known = this.getWorldPlayers().get(uuid);
+            if (known != null) {
+                // Stats from an earlier game - a winstreak is only worth showing if it is current
+                if (this.claimRefresh(uuid, known)) {
+                    this.fetchStats(entityPlayer);
+                }
+                continue;
+            }
+
+            if (this.statAssembly.contains(uuid)) {
                 continue;
             }
 

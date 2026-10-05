@@ -18,6 +18,8 @@ import java.util.Map;
 public class HPlayer {
     private final Map<String, HGameBase> gameMap = new HashMap<>();
     private final String playerUUID;
+    /** When this entry was made - for a player from the API, when the stats were fetched. */
+    private final long loadedAt = System.currentTimeMillis();
     private String playerName;
     private String playerRank = "";
     private boolean nicked;
@@ -77,6 +79,10 @@ public class HPlayer {
 
     public String getPlayerName() {
         return this.playerName;
+    }
+
+    public long getLoadedAt() {
+        return this.loadedAt;
     }
 
     /** The formatted stats of one game, in the game's own order; empty when there are none. */

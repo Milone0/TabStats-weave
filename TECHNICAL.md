@@ -239,6 +239,20 @@ trailing spaces to widen its column. A stat the layout has no entry for is appen
 dropped, so a column added in a later version shows up instead of silently disappearing. The
 order is stored per gamemode under `StatColumns` in `config.json`.
 
+### When stats are loaded again
+
+Players stay cached across worlds, but a winstreak is worthless once a game has ended since it
+was loaded. So every world change — on Hypixel, every new game — marks all cached stats as
+outdated (`StatWorld.startNewWorld`): each `HPlayer` knows when it was loaded, and anything
+older than the current world is loaded again as soon as the player shows up. The old stats stay
+on screen until the new ones are in, so nothing blanks out.
+
+Each player gets that reload once per world. A reload that runs out of retries keeps the old
+stats instead of falling back to a bare entry, and is not tried again until the next world.
+Hypixel refuses the same player for about a minute, so after a very short game the reload
+simply waits that minute out. `/bw` follows the same rule: stats from an earlier world are only
+handed out while that minute has not passed, since asking again could only fail.
+
 ### Players a pre-game lobby hides
 
 A pre-game lobby gives away nobody: no usable tab entry, no named entity. The one moment a
