@@ -7,6 +7,7 @@ import tabstats.playerapi.exception.ApiRequestException;
 import tabstats.playerapi.exception.ApiThrottleException;
 import tabstats.playerapi.exception.BadJsonException;
 import tabstats.playerapi.exception.InvalidKeyException;
+import tabstats.playerapi.exception.PlayerCooldownException;
 import tabstats.playerapi.exception.PlayerNullException;
 import tabstats.util.ChatColor;
 import tabstats.util.Handler;
@@ -171,6 +172,13 @@ public class StatWorld {
             return;
         }
 
+        /* Just fetched for a chat command - Hypixel would refuse to hand the same player out again this soon. */
+        HPlayer lookedUp = PlayerLookup.getRecentByUuid(uuid);
+        if (lookedUp != null) {
+            cachePlayer(uuid, lookedUp, playerName, displayComponent);
+            return;
+        }
+
         String playerUUID = uuid.toString().replace("-", "");
         boolean versionTwo = uuid.version() == 2;
         if (versionTwo && attempt == 0) {
@@ -189,6 +197,11 @@ public class StatWorld {
             // Requests are paused for everyone; come back once the pause is over
             long jitter = ThreadLocalRandom.current().nextLong(THROTTLE_JITTER_MS);
             retryLater(uuid, playerName, displayComponent, attempt, ex.getRetryAfterMs() + jitter);
+        } catch (PlayerCooldownException ex) {
+            // Only this player has to wait; everyone else is still asked for right away
+            Log.info("Hypixel refused " + playerName + " as asked for too recently - retrying in "
+                    + (ex.getRetryAfterMs() / 1000L) + "s");
+            retryLater(uuid, playerName, displayComponent, attempt, ex.getRetryAfterMs());
         } catch (InvalidKeyException ex) {
             /*
              * No key, or one Hypixel rejects. Asking again would only repeat the answer - each tick,

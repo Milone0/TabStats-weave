@@ -26,7 +26,8 @@ import java.util.regex.Pattern;
  *
  * <p>Results are not written into the stat world. A name is a weaker identity than a tab entry -
  * a nicked player may well be wearing the name of someone real, and the tab list must not end up
- * showing that stranger stats for them.
+ * showing that stranger stats for them. The stat world may still pick a result up by UUID through
+ * {@link #getRecentByUuid}, which is as strong an identity as the tab entry itself.
  */
 public final class PlayerLookup {
     /** Why a lookup produced no stats. */
@@ -116,6 +117,29 @@ public final class PlayerLookup {
     /** Drops everything remembered, for when the mod is handed a different API key. */
     public static void clearCache() {
         CACHE.clear();
+    }
+
+    /**
+     * A player fetched here within the last few minutes, matched by UUID. Lets the stat world take
+     * over what a chat command just loaded instead of asking Hypixel again, which refuses the same
+     * player for about a minute.
+     */
+    public static HPlayer getRecentByUuid(UUID uuid) {
+        if (uuid == null) {
+            return null;
+        }
+
+        String wanted = uuid.toString().replace("-", "");
+        long now = System.currentTimeMillis();
+        synchronized (CACHE) {
+            for (CachedPlayer cached : CACHE.values()) {
+                if (now - cached.fetchedAt <= CACHE_TTL_MS && wanted.equalsIgnoreCase(cached.player.getPlayerUUID())) {
+                    return cached.player;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static Result fetch(String name) {
