@@ -4,7 +4,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.IChatComponent;
 import tabstats.TabStats;
-import tabstats.config.ModConfig;
 import tabstats.listener.GameOverlayListener;
 import tabstats.util.ChatColor;
 import tabstats.util.Gamemodes;
@@ -23,7 +22,7 @@ public class WorldLoader extends StatWorld {
     private final Minecraft mc = Minecraft.getMinecraft();
     private World lastObservedWorld;
     private static final Pattern VALID_USERNAME = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
-    private boolean lastModEnabled = ModConfig.getInstance().isModEnabled();
+    private boolean lastModEnabled = TabStats.isActive();
 
     public boolean loadOrRender(EntityPlayer player) {
         if (player == null) return false;
@@ -66,7 +65,11 @@ public class WorldLoader extends StatWorld {
         /* Ahead of every gate below: the stat commands work wherever the player is. */
         PartyTracker.tick();
 
-        if (!ModConfig.getInstance().isModEnabled()) {
+        /*
+         * Switched off, or not on Hypixel. Coming back is a world change like any other, so the
+         * location is asked again then.
+         */
+        if (!TabStats.isActive()) {
             // Just reset scroll when disabling, preserve cache
             if (lastModEnabled) {
                 resetTabScroll();

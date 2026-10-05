@@ -1,6 +1,6 @@
 package tabstats.playerapi;
 
-import tabstats.config.ModConfig;
+import tabstats.TabStats;
 import tabstats.playerapi.api.HypixelAPI;
 import tabstats.playerapi.api.MojangAPI;
 import tabstats.playerapi.exception.ApiRequestException;
@@ -171,7 +171,7 @@ public class StatWorld {
      * Fetch stats for a specific player using the retry system
      */
     public void fetchStats(EntityPlayer entityPlayer) {
-        if (!ModConfig.getInstance().isModEnabled()) {
+        if (!TabStats.isActive()) {
             this.statAssembly.remove(entityPlayer.getUniqueID());
             return;
         }
@@ -194,7 +194,7 @@ public class StatWorld {
     }
 
     private void loadStats(UUID uuid, String playerName, String displayComponent, int attempt) {
-        if (!ModConfig.getInstance().isModEnabled()) {
+        if (!TabStats.isActive()) {
             this.statAssembly.remove(uuid);
             return;
         }
@@ -291,8 +291,7 @@ public class StatWorld {
      * drawn in the tab list even though a pre-game lobby gives them no tab entry of their own.
      */
     public void revealFromChat(String name) {
-        ModConfig config = ModConfig.getInstance();
-        if (name == null || !config.isModEnabled()) {
+        if (name == null || !TabStats.isActive()) {
             return;
         }
 

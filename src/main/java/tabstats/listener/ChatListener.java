@@ -7,7 +7,6 @@ import net.minecraft.util.IChatComponent;
 import net.weavemc.api.event.ChatEvent;
 import net.weavemc.api.event.SubscribeEvent;
 import tabstats.TabStats;
-import tabstats.config.ModConfig;
 import tabstats.playerapi.WorldLoader;
 import tabstats.util.ChatNameParser;
 import tabstats.util.Gamemodes;
@@ -39,8 +38,7 @@ public class ChatListener {
             return;
         }
 
-        ModConfig config = ModConfig.getInstance();
-        if (!config.isModEnabled()) {
+        if (!TabStats.isActive()) {
             return;
         }
 

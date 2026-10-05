@@ -11,6 +11,7 @@ import tabstats.playerapi.PlayerLookup;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.playerapi.api.stats.StatString;
 import tabstats.util.ChatColor;
+import tabstats.util.HypixelServer;
 import tabstats.util.PartyTracker;
 import tabstats.util.StatFormatting;
 
@@ -53,6 +54,15 @@ public class GameStatsCommand extends Command {
         super(name, aliases);
         this.gamemode = gamemode;
         this.tag = tag;
+    }
+
+    /**
+     * Off Hypixel the command is left to the server, which may well have a {@code /bw} of its own -
+     * neither run nor tab-completed here.
+     */
+    @Override
+    public boolean matches(String message) {
+        return HypixelServer.isOnHypixel() && super.matches(message);
     }
 
     /**

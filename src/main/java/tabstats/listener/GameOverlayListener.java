@@ -1,5 +1,6 @@
 package tabstats.listener;
 
+import tabstats.TabStats;
 import tabstats.config.ModConfig;
 import tabstats.config.StatColumnLayout;
 import tabstats.render.StatsTab;
@@ -35,7 +36,7 @@ public class GameOverlayListener {
     public GameOverlayListener() {
         this.statsTab = new StatsTab(this.mc, this.mc.ingameGUI);
         this.statsTab.setRenderHeaderFooter(ModConfig.getInstance().isRenderHeaderFooterEnabled());
-        this.modEnabled = ModConfig.getInstance().isModEnabled();
+        this.modEnabled = TabStats.isActive();
     }
 
     /**
@@ -118,10 +119,11 @@ public class GameOverlayListener {
         return visible;
     }
 
+    /** Also hands the vanilla tab list back as soon as the client leaves Hypixel. */
     private void syncModEnabled() {
-        boolean configEnabled = ModConfig.getInstance().isModEnabled();
-        if (configEnabled != this.modEnabled) {
-            setModEnabled(configEnabled);
+        boolean active = TabStats.isActive();
+        if (active != this.modEnabled) {
+            setModEnabled(active);
         }
     }
 
