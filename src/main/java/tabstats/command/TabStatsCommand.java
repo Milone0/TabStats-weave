@@ -6,6 +6,7 @@ import tabstats.playerapi.StatWorld;
 import tabstats.util.ChatColor;
 import tabstats.util.Gamemodes;
 import tabstats.util.HypixelLocation;
+import tabstats.util.HypixelServer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.util.ChatComponentText;
 import net.weavemc.api.command.Command;
@@ -33,6 +34,12 @@ public class TabStatsCommand extends Command {
     private void printLocation() {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.thePlayer == null) {
+            return;
+        }
+
+        if (!HypixelServer.isOnHypixel()) {
+            mc.thePlayer.addChatMessage(new ChatComponentText(ChatColor.GOLD + "[TabStats] " + ChatColor.GRAY
+                    + "not on Hypixel | stats: " + ChatColor.RED + "off"));
             return;
         }
 

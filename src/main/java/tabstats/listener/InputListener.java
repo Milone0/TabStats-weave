@@ -1,7 +1,6 @@
 package tabstats.listener;
 
 import tabstats.TabStats;
-import tabstats.config.ModConfig;
 import tabstats.render.StatsTab;
 import net.minecraft.client.Minecraft;
 import net.weavemc.api.event.MouseEvent;
@@ -15,7 +14,7 @@ public class InputListener {
             return;
         }
 
-        if (!ModConfig.getInstance().isModEnabled()) {
+        if (!TabStats.isActive()) {
             return;
         }
 
