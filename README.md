@@ -95,6 +95,8 @@ and not to your other versions.
     they are shown in the order you typed them, even ones switched off in the menu
   - `/bw p` — everyone in your party (`/bw p fkdr` for one stat); says so when you are in none
 - the menu also toggles the mod and the header/footer
+- on any server other than Hypixel, and in singleplayer, the mod switches itself off: vanilla
+  tab list, no API calls, and `/bw` goes to that server. `/tabstats` still opens the menu
 - optional: an [Urchin](https://urchin.ws) key adds cheater tags, Bedwars only.
   Without one that column is just a grey `-`
 

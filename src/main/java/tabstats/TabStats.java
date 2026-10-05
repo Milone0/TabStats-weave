@@ -8,6 +8,7 @@ import tabstats.listener.GameOverlayListener;
 import tabstats.listener.GuiOpenListener;
 import tabstats.listener.InputListener;
 import tabstats.playerapi.WorldLoader;
+import tabstats.util.HypixelServer;
 import net.weavemc.api.ModInitializer;
 import net.weavemc.api.command.CommandBus;
 import net.weavemc.api.event.EventBus;
@@ -67,14 +68,23 @@ public class TabStats implements ModInitializer {
         return ModConfig.getInstance().isModEnabled();
     }
 
+    /**
+     * Whether the mod does anything right now: switched on in the menu, and connected to Hypixel.
+     * Off Hypixel it disables itself without touching the setting, so it is back on the next join.
+     */
+    public static boolean isActive() {
+        return ModConfig.getInstance().isModEnabled() && HypixelServer.isOnHypixel();
+    }
+
     public void applyModEnabled(boolean enabled) {
+        boolean active = enabled && HypixelServer.isOnHypixel();
         if (this.gameOverlayListener != null) {
-            this.gameOverlayListener.setModEnabled(enabled);
+            this.gameOverlayListener.setModEnabled(active);
         }
 
         // When re-enabling, refresh the display to show current lobby
         // When disabling, just stop processing - preserve cache for future use
-        if (enabled && this.statWorld != null) {
+        if (active && this.statWorld != null) {
             this.statWorld.rerenderTabList();
         }
     }
