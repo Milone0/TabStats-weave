@@ -16,12 +16,15 @@ import org.apache.http.util.EntityUtils;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 public class HypixelAPI {
     private static final String PLAYER_ENDPOINT = "https://api.hypixel.net/v2/player?uuid=%s";
     /** Pause when Hypixel throttles without saying for how long. */
     private static final long DEFAULT_KEY_THROTTLE_MS = 10_000L;
     private static final long DEFAULT_GLOBAL_THROTTLE_MS = 30_000L;
+    /** Hypixel refuses the same player again for about a minute. */
+    private static final long PLAYER_COOLDOWN_MS = 60_000L;
 
     /**
      * No request goes out before this moment. One throttle answer closes the gate for every
@@ -41,6 +44,7 @@ public class HypixelAPI {
      * @throws InvalidKeyException If Hypixel API Key is missing or Invalid
      * @throws PlayerNullException If Target Player UUID is returned Null from the Hypixel API
      * @throws ApiThrottleException If requests are paused, or Hypixel throttled this one
+     * @throws PlayerCooldownException If Hypixel refused this player because they were asked for a moment ago
      * @throws ApiRequestException If the request failed in any other way, network errors included
      * @throws BadJsonException If the answer was not a JSON object
      */
@@ -61,15 +65,13 @@ public class HypixelAPI {
         request.addHeader("API-Key", apiKey);
 
         int status;
+        long remaining;
         long resetMs;
         JsonObject obj;
         try (CloseableHttpResponse response = Http.CLIENT.execute(request)) {
             status = response.getStatusLine().getStatusCode();
+            remaining = headerSeconds(response, "RateLimit-Remaining");
             resetMs = headerSeconds(response, "RateLimit-Reset") * 1000L;
-            if (headerSeconds(response, "RateLimit-Remaining") == 0L && resetMs > 0L) {
-                // The window is used up; asking again before it resets only earns a throttle
-                closeGate(resetMs);
-            }
 
             HttpEntity entity = response.getEntity();
             if (entity == null) {
@@ -92,15 +94,32 @@ public class HypixelAPI {
         }
 
         boolean success = isTrue(obj, "success");
+        boolean global = isTrue(obj, "global");
+        boolean throttled = !success && (global || isTrue(obj, "throttle") || status == 429);
+        String cause = asString(obj, "cause");
+
+        /*
+         * Hypixel also answers 429 when the same player was asked for within the last minute,
+         * e.g. by /bw right before the tab list wanted them. That says nothing about the key, so
+         * only this player waits - closing the gate over it once paused every request for the
+         * rest of the five-minute window, and a pre-game lobby went by without any stats.
+         */
+        if (throttled && !global && isPlayerCooldown(cause, remaining)) {
+            throw new PlayerCooldownException(PLAYER_COOLDOWN_MS);
+        }
+
+        if (remaining == 0L && resetMs > 0L) {
+            // The window is used up; asking again before it resets only earns a throttle
+            closeGate(resetMs, "request window used up");
+        }
+
         if (!success) {
-            boolean global = isTrue(obj, "global");
-            if (global || isTrue(obj, "throttle") || status == 429) {
+            if (throttled) {
                 long pause = resetMs > 0L ? resetMs : (global ? DEFAULT_GLOBAL_THROTTLE_MS : DEFAULT_KEY_THROTTLE_MS);
-                closeGate(pause);
+                closeGate(pause, cause.isEmpty() ? "HTTP " + status : cause);
                 throw new ApiThrottleException(global, pause);
             }
 
-            String cause = asString(obj, "cause");
             if (status == 403 || "Invalid API key".equalsIgnoreCase(cause)) {
                 if (!apiKey.equals(lastRejectedKey)) {
                     lastRejectedKey = apiKey;
@@ -120,14 +139,23 @@ public class HypixelAPI {
         return obj;
     }
 
-    private static void closeGate(long millis) {
+    private static void closeGate(long millis, String reason) {
         long until = System.currentTimeMillis() + millis;
         if (until > notBefore) {
             if (millisUntilAllowed() == 0L) {
-                Log.info("Hypixel API throttled - pausing requests for " + (millis / 1000L) + "s");
+                Log.info("Hypixel API throttled (" + reason + ") - pausing requests for " + (millis / 1000L) + "s");
             }
             notBefore = until;
         }
+    }
+
+    /**
+     * Whether a throttle answer is about the one player asked for rather than the key. Hypixel
+     * says so in the cause; failing that, a key with requests left in its window cannot be the
+     * one that ran out.
+     */
+    private static boolean isPlayerCooldown(String cause, long remaining) {
+        return cause.toLowerCase(Locale.ROOT).contains("too recently") || remaining > 0L;
     }
 
     /** A numeric response header, or -1 when it is missing or not a number. */

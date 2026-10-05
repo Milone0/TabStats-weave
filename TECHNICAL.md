@@ -417,6 +417,15 @@ before decompiling anything.
   classloader changes, which would be Weave's problem to fix, not this mod's.
 - **Hypixel API auth.** `HypixelAPI` sends the key as an `API-Key` header, the documented
   way; the deprecated `?key=` query parameter is no longer used.
+- **Two kinds of HTTP 429.** Hypixel throttles when the key's five-minute window is used up,
+  but also when the same player is asked for again within about a minute
+  (`You have already looked up this player too recently`). Only the first may close the gate
+  for every request; `HypixelAPI` recognises the second by its cause, or by
+  `RateLimit-Remaining` still being above 0, and throws `PlayerCooldownException`, which
+  retries just that player after 60 s. Treating both alike paused everything for the rest of
+  the window whenever `/bw` had just fetched the party, so the pre-game lobby went by without
+  stats. The stat world also takes over a fresh `/bw` result by UUID
+  (`PlayerLookup.getRecentByUuid`), so that path no longer asks twice at all.
 - **`jvm_arguments` lives in SQLite.** A launcher schema migration, or deleting and
   recreating the profile, drops the setting. It is then re-entered under
   Settings → Game → JVM Arguments (needs Advanced Mode).
