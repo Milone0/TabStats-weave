@@ -26,7 +26,7 @@ public class ChatListener {
             return;
         }
 
-        /* The answer to the mod's own /locraw: consumed here, never shown to the player. */
+        /* A /locraw answer: never shown, unless the player typed the command themselves. */
         if (HypixelLocation.handleChatMessage(message.getUnformattedText())) {
             event.setCancelled(true);
             return;
@@ -81,6 +81,12 @@ public class ChatListener {
         }
 
         statWorld.revealFromChat(name);
+    }
+
+    /** A /locraw the player typed in gets its answer shown, unlike the ones the mod sends. */
+    @SubscribeEvent
+    public void onChatSent(ChatEvent.Sent event) {
+        HypixelLocation.handleSentMessage(event.getMessage());
     }
 
     private boolean isSelf(String name) {

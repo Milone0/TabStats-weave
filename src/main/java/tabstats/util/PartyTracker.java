@@ -13,8 +13,8 @@ import java.util.regex.Pattern;
  *
  * <p>There is no other source for it: a party is not on the scoreboard and not in the tab list,
  * so the only way to learn the members is to run the command and read the answer back out of
- * chat. The answer is swallowed while a request of the mod is in flight, the same way
- * {@link HypixelLocation} handles {@code /locraw}, so asking never spams the chat.
+ * chat. The answer is swallowed while a request of the mod is in flight, so asking never spams
+ * the chat.
  *
  * <p>Everything here runs on the client thread: the command that asks, the chat line that
  * answers, and the tick that gives up when no answer ever arrives.
