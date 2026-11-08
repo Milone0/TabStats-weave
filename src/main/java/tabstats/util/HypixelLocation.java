@@ -4,6 +4,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.play.client.C01PacketChatMessage;
 
 import java.util.Locale;
 
@@ -19,9 +20,8 @@ import java.util.Locale;
  * <p>One request goes out per world the client joins, retried a few times if the answer is lost.
  * If Hypixel never answers, the mod falls back to the scoreboard alone rather than staying dark.
  *
- * <p>Every request sent is counted until its answer comes back, so that each one is hidden from
- * the chat - also an answer that is merely late and arrives after a retry already went out, or
- * after the world it was asked from has been left.
+ * <p>Every answer is hidden from the chat, whoever asked and however late it comes - the only
+ * exception is a {@code /locraw} the player typed in, whose answer is what they want to see.
  */
 public final class HypixelLocation {
     /** How long to wait for an answer before asking again. */
@@ -29,8 +29,8 @@ public final class HypixelLocation {
     /** The server ignores commands sent in the same breath as the world change. */
     private static final long JOIN_GRACE_MS = 1_000L;
     private static final int MAX_ATTEMPTS = 3;
-    /** How long a request can still be answered; anything later was asked by someone else. */
-    private static final long ANSWER_WINDOW_MS = 10_000L;
+    /** How long a {@code /locraw} typed by the player waits for the answer it gets to see. */
+    private static final long TYPED_ANSWER_WINDOW_MS = 5_000L;
 
     private static volatile String gametype;
     private static volatile String mode;
@@ -41,12 +41,9 @@ public final class HypixelLocation {
     private static volatile int attempts;
     private static volatile long lastRequest;
     private static volatile long worldJoinTime;
-    /** Requests asked from the current world whose answer has not come back yet. */
-    private static volatile int pending;
-    /** Requests asked from a world already left: their answers are hidden, but describe the old server. */
-    private static volatile int stale;
-    /** When the last request went out. Unlike {@link #lastRequest}, it survives a world change. */
-    private static volatile long lastSent;
+    /** {@code /locraw} commands the player typed whose answer has not been shown yet. */
+    private static volatile int typedRequests;
+    private static volatile long lastTypedRequest;
 
     private HypixelLocation() {
     }
@@ -62,8 +59,6 @@ public final class HypixelLocation {
         attempts = 0;
         lastRequest = 0L;
         worldJoinTime = System.currentTimeMillis();
-        stale += pending;
-        pending = 0;
     }
 
     /** Sends {@code /locraw} when an answer is due. Call from the client tick. */
@@ -96,58 +91,57 @@ public final class HypixelLocation {
         }
 
         lastRequest = now;
-        lastSent = now;
         attempts++;
-        pending++;
-        mc.thePlayer.sendChatMessage("/locraw");
+        /*
+         * Straight to the connection rather than through sendChatMessage: that one fires the
+         * ChatEvent.Sent of a command typed by the player, and this request must not pass for one.
+         */
+        mc.thePlayer.sendQueue.addToSendQueue(new C01PacketChatMessage("/locraw"));
+    }
+
+    /** Notes a {@code /locraw} typed by the player, so that its answer is let through to the chat. */
+    public static void handleSentMessage(String message) {
+        if (message == null) {
+            return;
+        }
+
+        String command = message.trim();
+        if (!command.equalsIgnoreCase("/locraw")) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        typedRequests = now - lastTypedRequest > TYPED_ANSWER_WINDOW_MS ? 1 : typedRequests + 1;
+        lastTypedRequest = now;
     }
 
     /**
      * Offers a chat line to the tracker.
      *
-     * @return true when the line was the answer to our own request and should not reach the chat.
+     * @return true when the line is an answer to {@code /locraw} that the player did not ask for,
+     *         and should not reach the chat.
      */
     public static boolean handleChatMessage(String rawMessage) {
-        if (rawMessage == null || !expectingAnswer()) {
+        JsonObject json = parseAnswer(rawMessage);
+        if (json == null) {
             return false;
         }
 
-        String text = ChatColor.stripColor(rawMessage);
-        if (text == null) {
-            return false;
+        /*
+         * Until this world has been asked, an answer still belongs to the world just left. Any
+         * answer after that - a late one, a retry's, or one the player asked for - describes the
+         * server the client is on now, so it may overwrite what an earlier one said.
+         */
+        if (lastRequest != 0L) {
+            server = asString(json, "server");
+            gametype = asString(json, "gametype");
+            mode = asString(json, "mode");
+            map = asString(json, "map");
+            lobbyName = asString(json, "lobbyname");
+            resolved = true;
         }
 
-        text = text.trim();
-        if (!text.startsWith("{") || !text.endsWith("}") || !text.contains("\"server\"")) {
-            return false;
-        }
-
-        JsonObject json;
-        try {
-            JsonElement parsed = new JsonParser().parse(text);
-            if (!parsed.isJsonObject()) {
-                return false;
-            }
-            json = parsed.getAsJsonObject();
-        } catch (RuntimeException ex) {
-            return false;
-        }
-
-        /* Answers come back in the order they were asked, so the old world's ones are first. */
-        if (stale > 0) {
-            stale--;
-            return true;
-        }
-
-        /* A late answer to an earlier try still describes this same server, so it may overwrite. */
-        pending--;
-        server = asString(json, "server");
-        gametype = asString(json, "gametype");
-        mode = asString(json, "mode");
-        map = asString(json, "map");
-        lobbyName = asString(json, "lobbyname");
-        resolved = true;
-        return true;
+        return !claimTypedRequest();
     }
 
     /**
@@ -203,19 +197,50 @@ public final class HypixelLocation {
                 + " lobbyname=" + lobbyName + " -> " + (inGame() ? "game" : "lobby");
     }
 
-    /** Whether a request of the mod is still waiting for its answer. */
-    private static boolean expectingAnswer() {
-        if (pending <= 0 && stale <= 0) {
+    /**
+     * The chat line as a {@code /locraw} answer: a JSON object naming the server, and nothing
+     * else on the line. Which other fields it carries is left open on purpose, so that a field
+     * Hypixel adds one day cannot make the answer show up in the chat again.
+     */
+    private static JsonObject parseAnswer(String rawMessage) {
+        String text = ChatColor.stripColor(rawMessage);
+        if (text == null) {
+            return null;
+        }
+
+        text = text.trim();
+        if (!text.startsWith("{") || !text.endsWith("}") || !text.contains("\"server\"")) {
+            return null;
+        }
+
+        try {
+            JsonElement parsed = new JsonParser().parse(text);
+            if (!parsed.isJsonObject()) {
+                return null;
+            }
+
+            JsonObject json = parsed.getAsJsonObject();
+            return asString(json, "server") == null ? null : json;
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    /**
+     * Whether this answer is the one a {@code /locraw} typed by the player is waiting for. One
+     * that never came back is forgotten after a while, so it cannot let a later answer through.
+     */
+    private static boolean claimTypedRequest() {
+        if (typedRequests <= 0) {
             return false;
         }
 
-        if (System.currentTimeMillis() - lastSent > ANSWER_WINDOW_MS) {
-            // Lost on the way: a /locraw answered now was typed by the player or another mod.
-            pending = 0;
-            stale = 0;
+        if (System.currentTimeMillis() - lastTypedRequest > TYPED_ANSWER_WINDOW_MS) {
+            typedRequests = 0;
             return false;
         }
 
+        typedRequests--;
         return true;
     }
 
