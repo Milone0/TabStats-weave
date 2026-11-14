@@ -90,13 +90,18 @@ public final class HypixelLocation {
             return;
         }
 
-        lastRequest = now;
-        attempts++;
+        noteRequest(now);
         /*
          * Straight to the connection rather than through sendChatMessage: that one fires the
          * ChatEvent.Sent of a command typed by the player, and this request must not pass for one.
          */
         mc.thePlayer.sendQueue.addToSendQueue(new C01PacketChatMessage("/locraw"));
+    }
+
+    /** Counts a request as sent - split from sending it, so the tests can ask without a server. */
+    static void noteRequest(long now) {
+        lastRequest = now;
+        attempts++;
     }
 
     /** Notes a {@code /locraw} typed by the player, so that its answer is let through to the chat. */

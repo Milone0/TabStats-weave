@@ -20,29 +20,21 @@ public enum ChatColor {
     LIGHT_PURPLE('d', -43521),
     YELLOW('e', -171),
     WHITE('f', -1),
-    OBFUSCATE('k', 0, true),
-    BOLD('l', 0, true),
-    STRIKETHROUGH('m', 0, true),
-    UNDERLINE('n', 0, true),
-    ITALIC('o', 0, true),
+    OBFUSCATE('k', 0),
+    BOLD('l', 0),
+    STRIKETHROUGH('m', 0),
+    UNDERLINE('n', 0),
+    ITALIC('o', 0),
     RESET('r', 0);
 
     public static final char COLOR_CHAR = '\u00A7';
     private static final Pattern STRIP_COLOR_PATTERN = Pattern.compile("(?i)" + COLOR_CHAR + "[0-9A-FK-OR]");
 
-    private final char code;
-    private final boolean isFormat;
     private final String toString;
     private final int rgb;
 
     ChatColor(char code, int rgb) {
-        this(code, rgb, false);
-    }
-
-    ChatColor(char code, int rgb, boolean isFormat) {
-        this.code = code;
         this.rgb = rgb;
-        this.isFormat = isFormat;
         this.toString = new String(new char[]{COLOR_CHAR, code});
     }
 

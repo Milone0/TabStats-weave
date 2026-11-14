@@ -3,6 +3,7 @@ package tabstats.util;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import net.minecraft.client.Minecraft;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -37,6 +38,23 @@ public class Handler {
         }
 
         scheduler.schedule(() -> asExecutor(runnable), delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Runs the task on the client thread, which owns the chat, the player cache and the tab
+     * list - right away when already on it, with the next tick otherwise.
+     */
+    public static void onClientThread(Runnable task) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null) {
+            return;
+        }
+
+        if (mc.isCallingFromMinecraftThread()) {
+            task.run();
+        } else {
+            mc.addScheduledTask(task);
+        }
     }
 
     public static Gson getGson() {

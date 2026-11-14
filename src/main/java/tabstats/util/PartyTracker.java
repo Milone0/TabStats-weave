@@ -49,8 +49,7 @@ public final class PartyTracker {
             return;
         }
 
-        WAITING.add(callback);
-        if (requestedAt != 0L) {
+        if (!expect(callback)) {
             return;
         }
 
@@ -60,10 +59,25 @@ public final class PartyTracker {
             return;
         }
 
+        mc.thePlayer.sendChatMessage("/party list");
+    }
+
+    /**
+     * Signs a callback up for the next answer - everything a request does short of sending the
+     * command, which is also what the tests drive this class through.
+     *
+     * @return false when a request is already on its way, so no command has to be sent
+     */
+    static boolean expect(Callback callback) {
+        WAITING.add(callback);
+        if (requestedAt != 0L) {
+            return false;
+        }
+
         MEMBERS.clear();
         capturing = false;
         requestedAt = System.currentTimeMillis();
-        mc.thePlayer.sendChatMessage("/party list");
+        return true;
     }
 
     /**

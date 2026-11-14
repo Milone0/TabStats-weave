@@ -8,6 +8,7 @@ import tabstats.playerapi.StatWorld;
 import tabstats.listener.GameOverlayListener;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.util.ChatColor;
+import tabstats.util.PlayerNames;
 import tabstats.util.StatFormatting;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Ordering;
@@ -44,12 +45,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 public class StatsTab extends GuiPlayerTabOverlay {
     private static final Ordering<NetworkPlayerInfo> field_175252_a = Ordering.from(new StatsTab.PlayerComparator());
     private static final int MAX_TAB_PLAYERS = 80;
-    private static final Pattern VALID_USERNAME = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final String MAX_RANK_SAMPLE = ChatColor.BOLD + "[YOUTUBE] WWWWWWWWWWWWWWWW";
     private final Minecraft mc;
     private final GuiIngame guiIngame;
@@ -188,7 +187,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
      *                than from anyone's stats, so the headers are there no matter whose stats
      *                have loaded, and each value is drawn under the column of the same name.
      */
-    public void renderNewPlayerlist(Scoreboard scoreboardIn, ScoreObjective scoreObjectiveIn, List<StatColumnLayout.Column> columns, String gamemode) {
+    public void renderNewPlayerlist(ScoreObjective scoreObjectiveIn, List<StatColumnLayout.Column> columns, String gamemode) {
         this.lastRenderedAt = Minecraft.getSystemTime();
         NetHandlerPlayClient netHandler = this.mc.thePlayer.sendQueue;
         StatWorld statWorld = TabStats.getTabStats().getStatWorld();
@@ -564,8 +563,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
     private String formatChatRevealedName(HPlayer hPlayer, ChatRevealedPlayer row) {
         if (!row.hasRealProfile()) {
             /* Nobody owns that name, so there are no stats to wait for either. */
-            return ChatColor.WHITE + "[" + ChatColor.RED + "NICKED" + ChatColor.WHITE + "] "
-                    + ChatColor.WHITE + row.getName();
+            return HPlayer.NICK_TAG + ChatColor.WHITE + row.getName();
         }
 
         if (hPlayer == null) {
@@ -573,9 +571,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
             return ChatColor.GRAY + row.getName();
         }
 
-        String rank = hPlayer.getPlayerRank();
-        String playerName = hPlayer.getPlayerName() != null ? hPlayer.getPlayerName() : row.getName();
-        return (rank == null ? "" : rank) + playerName;
+        return hPlayer.getRankedName(row.getName());
     }
 
     private List<NetworkPlayerInfo> collectEligiblePlayers(NetHandlerPlayClient netHandler, StatWorld statWorld) {
@@ -616,8 +612,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
             return false;
         }
 
-        String profileName = profile.getName();
-        return profileName != null && VALID_USERNAME.matcher(profileName).matches();
+        return PlayerNames.isValid(profile.getName());
     }
 
     private void drawScoreboardValues(ScoreObjective objectiveIn, int y, String playerName, int startX, int endX, NetworkPlayerInfo playerInfo) {
@@ -698,7 +693,6 @@ public class StatsTab extends GuiPlayerTabOverlay {
 
             String s1 = EnumChatFormatting.YELLOW + "" + i;
             this.mc.fontRendererObj.drawStringWithShadow(s1, (float)(endX - this.mc.fontRendererObj.getStringWidth(s1)), (float)y + (this.entryHeight / 2 - 4), 16777215);
-//            drawRect(endX - this.mc.fontRendererObj.getStringWidth(objectiveIn.getDisplayName()), y, endX, y + this.entryHeight, 553648127);
         }
     }
 
@@ -773,7 +767,7 @@ public class StatsTab extends GuiPlayerTabOverlay {
         String teamPrefix = team != null ? team.getColorPrefix() : "";
         String teamSuffix = team != null ? team.getColorSuffix() : "";
         String nameColor = teamPrefix.isEmpty() ? ChatColor.WHITE.toString() : teamPrefix;
-        return ChatColor.WHITE + "[" + ChatColor.RED + "NICKED" + ChatColor.WHITE + "] " + nameColor + playerInfo.getGameProfile().getName() + teamSuffix;
+        return HPlayer.NICK_TAG + nameColor + playerInfo.getGameProfile().getName() + teamSuffix;
     }
 
     /**

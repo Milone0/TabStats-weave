@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.UUID;
 
 public class HypixelAPI {
     private static final String PLAYER_ENDPOINT = "https://api.hypixel.net/v2/player?uuid=%s";
@@ -48,7 +49,7 @@ public class HypixelAPI {
      * @throws ApiRequestException If the request failed in any other way, network errors included
      * @throws BadJsonException If the answer was not a JSON object
      */
-    public JsonObject getWholeObject(String uuid) throws InvalidKeyException, PlayerNullException, ApiRequestException, BadJsonException {
+    public JsonObject getWholeObject(UUID uuid) throws InvalidKeyException, PlayerNullException, ApiRequestException, BadJsonException {
         String apiKey = ModConfig.getInstance().getApiKey().trim();
         if (apiKey.isEmpty()) {
             throw new InvalidKeyException();
@@ -59,7 +60,7 @@ public class HypixelAPI {
             throw new ApiThrottleException(false, wait);
         }
 
-        HttpGet request = new HttpGet(String.format(PLAYER_ENDPOINT, uuid.replace("-", "")));
+        HttpGet request = new HttpGet(String.format(PLAYER_ENDPOINT, uuid.toString().replace("-", "")));
         request.addHeader("Accept", "application/json");
         // A header rather than a query parameter, so the key never ends up in a logged URL
         request.addHeader("API-Key", apiKey);

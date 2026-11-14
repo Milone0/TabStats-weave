@@ -219,16 +219,15 @@ public class StatWorld {
             }
         }
 
-        String playerUUID = uuid.toString().replace("-", "");
         boolean versionTwo = uuid.version() == 2;
         if (versionTwo && attempt == 0) {
             this.v2Lookups.incrementAndGet();
         }
 
         try {
-            JsonObject wholeObject = new HypixelAPI().getWholeObject(playerUUID);
+            JsonObject wholeObject = new HypixelAPI().getWholeObject(uuid);
             // Only real players have API data, so whoever comes back here is not nicked
-            HPlayer hPlayer = HPlayer.fromApi(playerUUID, playerName, wholeObject);
+            HPlayer hPlayer = HPlayer.fromApi(uuid, playerName, wholeObject);
             if (versionTwo) {
                 this.v2Hits.incrementAndGet();
             }
@@ -273,7 +272,7 @@ public class StatWorld {
                 return;
             }
 
-            HPlayer bare = new HPlayer(uuid.toString().replace("-", ""), playerName);
+            HPlayer bare = new HPlayer(uuid, playerName);
             cachePlayer(uuid, bare, playerName, displayComponent);
             return;
         }
@@ -312,13 +311,11 @@ public class StatWorld {
         /* Already fetched for some other reason - they have an entity, or they chatted before. */
         HPlayer known = getPlayerByName(trimmed);
         if (known != null) {
-            UUID knownUuid = parseUuid(known.getPlayerUUID());
-            if (knownUuid != null) {
-                this.chatRevealed.put(key, new ChatRevealedPlayer(knownUuid, known.getPlayerName(), !known.isNicked()));
-                // Without an entity the tick never sees them, so stats from an earlier game are reloaded here
-                if (claimRefresh(knownUuid, known)) {
-                    fetchStatsWithRetry(knownUuid, known.getPlayerName(), null, 0, 0L);
-                }
+            UUID knownUuid = known.getUuid();
+            this.chatRevealed.put(key, new ChatRevealedPlayer(knownUuid, known.getPlayerName(), !known.isNicked()));
+            // Without an entity the tick never sees them, so stats from an earlier game are reloaded here
+            if (claimRefresh(knownUuid, known)) {
+                fetchStatsWithRetry(knownUuid, known.getPlayerName(), null, 0, 0L);
             }
             return;
         }
@@ -407,24 +404,6 @@ public class StatWorld {
             if (!safe.contains(playerUUID)) {
                 removePlayer(playerUUID);
             }
-        }
-    }
-
-    private static UUID parseUuid(String raw) {
-        if (raw == null) {
-            return null;
-        }
-
-        String value = raw.replace("-", "");
-        if (value.length() != 32) {
-            return null;
-        }
-
-        try {
-            return UUID.fromString(value.substring(0, 8) + "-" + value.substring(8, 12) + "-"
-                    + value.substring(12, 16) + "-" + value.substring(16, 20) + "-" + value.substring(20));
-        } catch (IllegalArgumentException ex) {
-            return null;
         }
     }
 

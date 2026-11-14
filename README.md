@@ -40,6 +40,9 @@ cd TabStats-weave
 The first run downloads Gradle, the Weave artifacts and the Minecraft libraries, and
 remaps the vanilla jar — expect a few minutes. Result: `build/libs/TabStats-1.3.0-weave.2.jar`.
 
+`build` also runs the unit tests in `src/test`, which cover the parts that read Hypixel's chat
+(names, `/party list`, `/locraw`) and the column layout. `./gradlew test` runs just those.
+
 If `java` is not on your `PATH`, point Gradle at a JDK explicitly:
 
 ```bash
