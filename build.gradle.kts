@@ -34,7 +34,15 @@ dependencies {
     implementation("net.weavemc:internals:1.4.0")
     implementation("net.weavemc.api:api:1.4.0")
     implementation("net.weavemc.api:api-v1_8:1.4.0")
+
+    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
+
+// The tests never start a game, but the classes they exercise still have to link against
+// Minecraft and its libraries, which the Weave plugin only puts on the compile classpath.
+configurations.testImplementation.get().extendsFrom(configurations.compileOnly.get())
 
 java {
     withSourcesJar()
@@ -81,5 +89,9 @@ tasks {
 
     jar {
         archiveBaseName.set(projectName)
+    }
+
+    test {
+        useJUnitPlatform()
     }
 }

@@ -13,11 +13,15 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /* Hypixel Player */
 public class HPlayer {
+    /** The tag put in front of a nicked player's name, wherever one is shown. */
+    public static final String NICK_TAG = ChatColor.WHITE + "[" + ChatColor.RED + "NICKED" + ChatColor.WHITE + "] ";
+
     private final Map<String, HGameBase> gameMap = new HashMap<>();
-    private final String playerUUID;
+    private final UUID uuid;
     /** When this entry was made - for a player from the API, when the stats were fetched. */
     private final long loadedAt = System.currentTimeMillis();
     private String playerName;
@@ -27,11 +31,11 @@ public class HPlayer {
     /**
      * A bare entry without stats, for nicked players and for players the API had nothing on.
      *
-     * @param playerUUID Player's UUID
+     * @param uuid Player's UUID
      * @param playerName Player's Name
      */
-    public HPlayer(String playerUUID, String playerName) {
-        this.playerUUID = playerUUID;
+    public HPlayer(UUID uuid, String playerName) {
+        this.uuid = uuid;
         this.playerName = playerName;
     }
 
@@ -43,10 +47,10 @@ public class HPlayer {
      *                    so it holds a "player" object
      * @param fallbackName the name to use when the answer carries none
      */
-    public static HPlayer fromApi(String playerUUID, String fallbackName, JsonObject wholeObject) {
+    public static HPlayer fromApi(UUID uuid, String fallbackName, JsonObject wholeObject) {
         JsonObject playerObject = wholeObject.getAsJsonObject("player");
 
-        HPlayer player = new HPlayer(playerUUID, fallbackName);
+        HPlayer player = new HPlayer(uuid, fallbackName);
         player.setPlayerRank(playerObject);
 
         JsonElement displayName = playerObject.get("displayname");
@@ -54,6 +58,8 @@ public class HPlayer {
             player.playerName = displayName.getAsString();
         }
 
+        // The game classes identify the player the way the APIs spell a UUID: without dashes
+        String playerUUID = uuid.toString().replace("-", "");
         player.addGames(
                 new Bedwars(player.playerName, playerUUID, playerObject),
                 new Duels(player.playerName, playerUUID, playerObject),
@@ -73,8 +79,8 @@ public class HPlayer {
         return !this.gameMap.isEmpty();
     }
 
-    public String getPlayerUUID() {
-        return this.playerUUID;
+    public UUID getUuid() {
+        return this.uuid;
     }
 
     public String getPlayerName() {
@@ -158,10 +164,15 @@ public class HPlayer {
 
         // If player is detected as nicked, prepend nick indicator
         if (isNicked()) {
-            return ChatColor.WHITE + "[" + ChatColor.RED + "NICKED" + ChatColor.WHITE + "] " + baseRank;
+            return NICK_TAG + baseRank;
         }
 
         return baseRank;
+    }
+
+    /** Rank and name the way a line of chat or a tab row shows them. */
+    public String getRankedName(String fallbackName) {
+        return getPlayerRank() + (this.playerName == null ? fallbackName : this.playerName);
     }
 
     public String getPlayerRankColor() {

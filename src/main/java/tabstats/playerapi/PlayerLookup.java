@@ -9,13 +9,13 @@ import tabstats.playerapi.exception.BadJsonException;
 import tabstats.playerapi.exception.InvalidKeyException;
 import tabstats.playerapi.exception.PlayerNullException;
 import tabstats.util.Handler;
+import tabstats.util.PlayerNames;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 /**
  * Stats for a player named by hand, for the chat commands.
@@ -75,7 +75,6 @@ public final class PlayerLookup {
         }
     }
 
-    private static final Pattern VALID_USERNAME = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private static final long CACHE_TTL_MS = 5 * 60 * 1000L;
     private static final int MAX_CACHED = 60;
 
@@ -96,7 +95,7 @@ public final class PlayerLookup {
      */
     public static void lookup(String rawName, Callback callback) {
         final String name = rawName == null ? "" : rawName.trim();
-        if (!VALID_USERNAME.matcher(name).matches()) {
+        if (!PlayerNames.isValid(name)) {
             callback.onResult(new Result(name, Status.UNKNOWN_NAME, null));
             return;
         }
@@ -129,11 +128,10 @@ public final class PlayerLookup {
             return null;
         }
 
-        String wanted = uuid.toString().replace("-", "");
         long now = System.currentTimeMillis();
         synchronized (CACHE) {
             for (CachedPlayer cached : CACHE.values()) {
-                if (now - cached.fetchedAt <= CACHE_TTL_MS && wanted.equalsIgnoreCase(cached.player.getPlayerUUID())) {
+                if (now - cached.fetchedAt <= CACHE_TTL_MS && uuid.equals(cached.player.getUuid())) {
                     return cached.player;
                 }
             }
@@ -143,13 +141,7 @@ public final class PlayerLookup {
     }
 
     private static Result fetch(String name) {
-        MojangAPI.Profile profile;
-        try {
-            profile = new MojangAPI().lookupProfile(name);
-        } catch (RuntimeException ex) {
-            return new Result(name, Status.FAILED, null);
-        }
-
+        MojangAPI.Profile profile = new MojangAPI().lookupProfile(name);
         if (profile == null) {
             return new Result(name, Status.FAILED, null);
         }
@@ -174,10 +166,9 @@ public final class PlayerLookup {
             return new Result(displayName(known, resolvedName), Status.OK, known);
         }
 
-        String playerUUID = uuid.toString().replace("-", "");
         try {
-            JsonObject wholeObject = new HypixelAPI().getWholeObject(playerUUID);
-            HPlayer player = HPlayer.fromApi(playerUUID, resolvedName, wholeObject);
+            JsonObject wholeObject = new HypixelAPI().getWholeObject(uuid);
+            HPlayer player = HPlayer.fromApi(uuid, resolvedName, wholeObject);
 
             remember(name, player);
             remember(resolvedName, player);

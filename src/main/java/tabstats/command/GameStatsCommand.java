@@ -11,6 +11,7 @@ import tabstats.playerapi.PlayerLookup;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.playerapi.api.stats.StatString;
 import tabstats.util.ChatColor;
+import tabstats.util.Handler;
 import tabstats.util.HypixelServer;
 import tabstats.util.PartyTracker;
 import tabstats.util.StatFormatting;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 /**
  * Writes the stats of named players into the chat, for one gamemode.
@@ -235,7 +237,7 @@ public class GameStatsCommand extends Command {
                     .append(' ').append(value);
         }
 
-        String name = nameOf(player, result.getName());
+        String name = player.getRankedName(result.getName());
         if (values.length() == 0) {
             return prefix + name + ChatColor.DARK_GRAY + " - " + ChatColor.RED + "no " + this.tag + " stats";
         }
@@ -256,16 +258,6 @@ public class GameStatsCommand extends Command {
         }
 
         return picked;
-    }
-
-    private String nameOf(HPlayer player, String fallback) {
-        if (player == null) {
-            return ChatColor.WHITE + fallback;
-        }
-
-        String rank = player.getPlayerRank();
-        String name = player.getPlayerName();
-        return (rank == null ? "" : rank) + (name == null ? fallback : name);
     }
 
     private String reason(PlayerLookup.Status status) {
@@ -357,30 +349,16 @@ public class GameStatsCommand extends Command {
         sendOnClientThread(() -> lines);
     }
 
-    private void sendOnClientThread(LineSupplier supplier) {
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null) {
-            return;
-        }
-
-        Runnable task = () -> {
+    private void sendOnClientThread(Supplier<List<String>> lines) {
+        Handler.onClientThread(() -> {
+            Minecraft mc = Minecraft.getMinecraft();
             if (mc.thePlayer == null) {
                 return;
             }
 
-            for (String line : supplier.get()) {
+            for (String line : lines.get()) {
                 mc.thePlayer.addChatMessage(new ChatComponentText(line));
             }
-        };
-
-        if (mc.isCallingFromMinecraftThread()) {
-            task.run();
-        } else {
-            mc.addScheduledTask(task);
-        }
-    }
-
-    private interface LineSupplier {
-        List<String> get();
+        });
     }
 }

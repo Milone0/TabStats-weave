@@ -1,7 +1,7 @@
 package tabstats.playerapi.api.games.bedwars;
 
+import tabstats.playerapi.api.UrchinTags;
 import tabstats.playerapi.api.games.HypixelGames;
-import tabstats.playerapi.api.games.bedwars.BedwarsUtil.CachedUrchinTag;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.playerapi.api.stats.StatInt;
 import tabstats.playerapi.api.stats.StatString;
@@ -52,7 +52,7 @@ public class Bedwars extends BedwarsUtil {
         double bblr = ratio(bedsBroken, bedsLost);
 
         // TAG stays the first column, so it is added before everything else
-        this.tagStat = getActiveUrchinApiKey().isEmpty() ? null : new StatString("TAG", "");
+        this.tagStat = UrchinTags.activeApiKey().isEmpty() ? null : new StatString("TAG", "");
         if (this.tagStat != null) {
             stats.add(this.tagStat);
         }
@@ -77,7 +77,7 @@ public class Bedwars extends BedwarsUtil {
     }
 
     private void scheduleUrchinLookup() {
-        if (getActiveUrchinApiKey().isEmpty()) {
+        if (UrchinTags.activeApiKey().isEmpty()) {
             return;
         }
 
@@ -86,7 +86,7 @@ public class Bedwars extends BedwarsUtil {
             return;
         }
 
-        CachedUrchinTag cached = getCachedUrchinTag(identity);
+        UrchinTags.Tag cached = UrchinTags.cached(identity);
         if (cached != null) {
             applyUrchinResult(cached);
             return;
@@ -96,7 +96,7 @@ public class Bedwars extends BedwarsUtil {
             return;
         }
 
-        enqueueUrchinLookup(identity, result -> {
+        UrchinTags.lookUp(identity, result -> {
             this.urchinLookupScheduled.set(false);
             if (result.isPending()) {
                 retryUrchinLookupLater();
@@ -116,13 +116,13 @@ public class Bedwars extends BedwarsUtil {
         Handler.schedule(this::scheduleUrchinLookup, URCHIN_RETRY_DELAY_MS * this.urchinRetries);
     }
 
-    private void applyUrchinResult(CachedUrchinTag data) {
+    private void applyUrchinResult(UrchinTags.Tag data) {
         if (data == null) {
             return;
         }
 
         this.tagStat.setValue(data.getDisplayValue());
-        announceTagIfNeeded(data);
+        UrchinTags.announce(data, getPlayerName());
     }
 
     private String formatWsValue(StatInt wsStat) {

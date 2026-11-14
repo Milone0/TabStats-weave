@@ -18,7 +18,6 @@ import java.util.regex.Pattern;
  * a quit line drops one, the bar around a game summary drops all of them.
  */
 public final class ChatNameParser {
-    private static final Pattern USERNAME = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     /** Rank tags, guild tags, SkyWars levels - anything the server wraps in brackets. */
     private static final Pattern BRACKET_GROUP = Pattern.compile("\\[[^\\]]*\\]");
     private static final Pattern QUIT_LINE = Pattern.compile("^(.+?) has quit!$");
@@ -118,7 +117,7 @@ public final class ChatNameParser {
         }
 
         String token = tokens[0];
-        if (!USERNAME.matcher(token).matches()) {
+        if (!PlayerNames.isValid(token)) {
             return null;
         }
 

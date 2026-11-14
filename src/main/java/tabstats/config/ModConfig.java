@@ -1,6 +1,8 @@
 package tabstats.config;
 
+import tabstats.TabStats;
 import tabstats.util.Handler;
+import tabstats.util.Log;
 import net.minecraft.client.Minecraft;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -21,9 +23,7 @@ import static tabstats.config.ModConfigNames.URCHIN_API_KEY;
 public class ModConfig {
     private static final String CONFIG_FILENAME = "config.json";
     private String apiKey;
-    private String lastApiKey; // Track the last API key to detect changes
     private String urchinApiKey;
-    private String lastUrchinApiKey;
     private static ModConfig instance;
     private File configFile;
     private volatile boolean renderHeaderFooter = true;
@@ -57,13 +57,8 @@ public class ModConfig {
             return;
         }
 
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc == null) {
-            return;
-        }
-
-        mc.addScheduledTask(() -> {
-            tabstats.TabStats tabStats = tabstats.TabStats.getTabStats();
+        Handler.onClientThread(() -> {
+            TabStats tabStats = TabStats.getTabStats();
             if (tabStats != null && tabStats.getStatWorld() != null) {
                 tabStats.getStatWorld().recheckAllPlayers();
             }
@@ -74,15 +69,12 @@ public class ModConfig {
         // Only update if the key actually changed
         if (!normalizeKey(key).equals(normalizeKey(this.apiKey))) {
             this.apiKey = key;
-            // Update lastApiKey to prevent duplicate change detection
-            this.lastApiKey = key;
         }
     }
 
     public synchronized void setUrchinApiKey(String key) {
         if (!normalizeKey(key).equals(normalizeKey(this.urchinApiKey))) {
             this.urchinApiKey = key;
-            this.lastUrchinApiKey = key;
         }
     }
 
@@ -116,32 +108,21 @@ public class ModConfig {
         long modified = file.lastModified();
         if (this.apiKey == null || this.urchinApiKey == null || modified != this.configLastLoaded) {
             JsonObject config = readConfig();
-            applyApiKeyFromDisk(getString(config, APIKEY));
-            applyUrchinKeyFromDisk(getString(config, URCHIN_API_KEY));
+            this.apiKey = keyFromDisk(this.apiKey, getString(config, APIKEY));
+            this.urchinApiKey = keyFromDisk(this.urchinApiKey, getString(config, URCHIN_API_KEY));
             this.configLastLoaded = modified;
         }
     }
 
-    private void applyApiKeyFromDisk(String value) {
-        String freshValue = value == null ? "" : value;
-        String normalizedFresh = normalizeKey(freshValue);
-        String normalizedLast = normalizeKey(this.lastApiKey);
-        if (!normalizedFresh.equals(normalizedLast) && this.lastApiKey != null) {
+    /**
+     * A key as config.json has it now. One that differs from the key in use was edited by hand,
+     * which rechecks everyone; the first read after start has nothing to differ from.
+     */
+    private String keyFromDisk(String current, String fresh) {
+        if (current != null && !normalizeKey(fresh).equals(normalizeKey(current))) {
             onApiKeyChanged();
         }
-        this.lastApiKey = freshValue;
-        this.apiKey = freshValue;
-    }
-
-    private void applyUrchinKeyFromDisk(String value) {
-        String freshValue = value == null ? "" : value;
-        String normalizedFresh = normalizeKey(freshValue);
-        String normalizedLast = normalizeKey(this.lastUrchinApiKey);
-        if (!normalizedFresh.equals(normalizedLast) && this.lastUrchinApiKey != null) {
-            onApiKeyChanged();
-        }
-        this.lastUrchinApiKey = freshValue;
-        this.urchinApiKey = freshValue;
+        return fresh;
     }
 
     private String normalizeKey(String key) {
@@ -174,8 +155,8 @@ public class ModConfig {
                     writer.flush();
                 }
             }
-        } catch (Exception ignored) {
-            // Silently handle file creation errors
+        } catch (Exception ex) {
+            Log.warn("Could not create the config file " + file, ex);
         }
     }
 
@@ -187,9 +168,7 @@ public class ModConfig {
         // One parse for every setting, instead of one per setting
         JsonObject config = readConfig();
         apiKey = getString(config, APIKEY);
-        lastApiKey = apiKey;
         urchinApiKey = getString(config, URCHIN_API_KEY);
-        lastUrchinApiKey = urchinApiKey;
         renderHeaderFooter = getBoolean(config, RENDER_HEADER_FOOTER, true);
         modEnabled = getBoolean(config, MOD_ENABLED, true);
         statColumns.loadFrom(getJsonObject(config, STAT_COLUMNS));
@@ -240,7 +219,8 @@ public class ModConfig {
             writer.flush(); // Ensure it's written to disk
             configLastLoaded = file.lastModified();
         } catch (Exception ex) {
-            // Silently handle save errors
+            // Worth a line in the log: an API key that was not written is gone after a restart
+            Log.warn("Could not save the config to " + file, ex);
         }
     }
 
@@ -255,7 +235,7 @@ public class ModConfig {
             JsonElement parsed = new JsonParser().parse(reader);
             return parsed != null && parsed.isJsonObject() ? parsed.getAsJsonObject() : null;
         } catch (Exception ex) {
-            // Silently handle read errors
+            Log.warn("Could not read the config from " + file, ex);
             return null;
         }
     }

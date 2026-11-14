@@ -87,7 +87,7 @@ public class GameOverlayListener {
         }
 
         Scoreboard effectiveScoreboard = scoreboard != null ? scoreboard : this.mc.thePlayer.getWorldScoreboard();
-        String gamemode = resolveGamemode(effectiveScoreboard);
+        String gamemode = Gamemodes.resolve(effectiveScoreboard);
 
         if (gamemode == null || !HypixelLocation.inGame()) {
             // A lobby: the mod has no stats to draw here, so vanilla renders the list.
@@ -98,7 +98,7 @@ public class GameOverlayListener {
                 ? scoreObjective
                 : (effectiveScoreboard == null ? null : effectiveScoreboard.getObjectiveInDisplaySlot(0));
 
-        this.statsTab.renderNewPlayerlist(effectiveScoreboard, effectiveObjective, visibleColumns(gamemode), gamemode);
+        this.statsTab.renderNewPlayerlist(effectiveObjective, visibleColumns(gamemode), gamemode);
         return true;
     }
 
@@ -125,10 +125,6 @@ public class GameOverlayListener {
         if (active != this.modEnabled) {
             setModEnabled(active);
         }
-    }
-
-    private String resolveGamemode(Scoreboard scoreboard) {
-        return Gamemodes.resolve(scoreboard);
     }
 
     private static Field overlayField() {
@@ -167,19 +163,29 @@ public class GameOverlayListener {
         }
 
         if (currentOverlay != null) {
-            IChatComponent currentHeader = Reflect.get(Reflect.field(GuiPlayerTabOverlay.class, HEADER_FIELD), currentOverlay);
-            IChatComponent currentFooter = Reflect.get(Reflect.field(GuiPlayerTabOverlay.class, FOOTER_FIELD), currentOverlay);
-
-            if (currentHeader != null) {
-                this.statsTab.setHeader(currentHeader.createCopy());
-            }
-
-            if (currentFooter != null) {
-                this.statsTab.setFooter(currentFooter.createCopy());
-            }
+            copyHeaderFooter(currentOverlay, this.statsTab);
         }
 
         this.overlayInjected = true;
+    }
+
+    /**
+     * Hands the header and footer to the overlay that takes over. The server sends them only to
+     * whichever overlay is in place at that moment, so the other one is out of date by then -
+     * including when it still shows a header the server has taken away again.
+     */
+    private static void copyHeaderFooter(GuiPlayerTabOverlay from, GuiPlayerTabOverlay to) {
+        Field headerField = Reflect.field(GuiPlayerTabOverlay.class, HEADER_FIELD);
+        Field footerField = Reflect.field(GuiPlayerTabOverlay.class, FOOTER_FIELD);
+        if (headerField == null || footerField == null) {
+            // Nothing can be read, so nothing is known to be newer
+            return;
+        }
+
+        IChatComponent header = Reflect.get(headerField, from);
+        IChatComponent footer = Reflect.get(footerField, from);
+        to.setHeader(header == null ? null : header.createCopy());
+        to.setFooter(footer == null ? null : footer.createCopy());
     }
 
     public void setModEnabled(boolean enabled) {
@@ -214,7 +220,9 @@ public class GameOverlayListener {
             if (this.originalOverlay == null) {
                 this.originalOverlay = target;
             }
-            Reflect.set(field, guiIngame, target);
+            if (Reflect.set(field, guiIngame, target)) {
+                copyHeaderFooter(this.statsTab, target);
+            }
         }
 
         this.overlayInjected = false;

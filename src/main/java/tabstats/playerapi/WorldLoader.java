@@ -9,6 +9,7 @@ import tabstats.util.ChatColor;
 import tabstats.util.Gamemodes;
 import tabstats.util.HypixelLocation;
 import tabstats.util.PartyTracker;
+import tabstats.util.PlayerNames;
 import net.weavemc.api.event.SubscribeEvent;
 import net.weavemc.api.event.TickEvent;
 import net.minecraft.world.World;
@@ -16,12 +17,10 @@ import net.minecraft.world.World;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 public class WorldLoader extends StatWorld {
     private final Minecraft mc = Minecraft.getMinecraft();
     private World lastObservedWorld;
-    private static final Pattern VALID_USERNAME = Pattern.compile("^[A-Za-z0-9_]{3,16}$");
     private boolean lastModEnabled = TabStats.isActive();
 
     public boolean loadOrRender(EntityPlayer player) {
@@ -33,7 +32,7 @@ public class WorldLoader extends StatWorld {
         }
 
         String baseName = player.getName();
-        if (baseName == null || !VALID_USERNAME.matcher(baseName).matches()) {
+        if (!PlayerNames.isValid(baseName)) {
             return false;
         }
 
@@ -45,7 +44,7 @@ public class WorldLoader extends StatWorld {
             }
         }
 
-    // Allow only UUID versions we care about: 4 (real), 2 (lobby/replay), 1 (nicked). Version 3 = holograms/NPCs.
+        // Allow only UUID versions we care about: 4 (real), 2 (lobby/replay), 1 (nicked). Version 3 = holograms/NPCs.
         int version = uuid.version();
         return version == 4 || version == 2 || version == 1;
     }
@@ -53,7 +52,7 @@ public class WorldLoader extends StatWorld {
     /** Version 1 UUIDs are always nicked on Hypixel, so there is nothing to ask the API. */
     private void markNicked(EntityPlayer entityPlayer) {
         UUID uuid = entityPlayer.getUniqueID();
-        HPlayer hPlayer = new HPlayer(uuid.toString().replace("-", ""), entityPlayer.getName());
+        HPlayer hPlayer = new HPlayer(uuid, entityPlayer.getName());
         hPlayer.setNicked(true);
         this.addPlayer(uuid, hPlayer);
         this.removeFromStatAssembly(uuid);
