@@ -327,7 +327,7 @@ public class StatWorld {
         Handler.asExecutor(() -> {
             try {
                 MojangAPI.Profile profile = new MojangAPI().lookupProfile(trimmed);
-                if (profile == null) {
+                if (profile.failed()) {
                     // Lookup itself failed - the next message from them tries again
                     return;
                 }
