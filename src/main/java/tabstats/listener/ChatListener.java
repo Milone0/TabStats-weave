@@ -12,12 +12,15 @@ import tabstats.util.ChatNameParser;
 import tabstats.util.Gamemodes;
 import tabstats.util.HypixelLocation;
 import tabstats.util.PartyTracker;
+import tabstats.util.SummaryBanner;
 
 /**
  * Feeds names written in chat into the stat world, so players that a pre-game lobby keeps hidden
  * show up in the tab list as soon as they say anything.
  */
 public class ChatListener {
+    /** Spots the game summary that ends the waiting phase, telling it apart from other banners. */
+    private final SummaryBanner banner = new SummaryBanner();
 
     @SubscribeEvent
     public void onChatReceived(ChatEvent.Received event) {
@@ -48,14 +51,14 @@ public class ChatListener {
             return;
         }
 
-        ChatNameParser.Reveal reveal = ChatNameParser.parse(message.getFormattedText());
-        if (reveal == null) {
+        /* Dropping names is never gated - the lobby they belong to is gone either way. */
+        if (this.banner.offer(message.getFormattedText())) {
+            statWorld.clearChatRevealed();
             return;
         }
 
-        /* Dropping names is never gated - the lobby they belong to is gone either way. */
-        if (reveal.getKind() == ChatNameParser.Kind.CLEAR) {
-            statWorld.clearChatRevealed();
+        ChatNameParser.Reveal reveal = ChatNameParser.parse(message.getFormattedText());
+        if (reveal == null) {
             return;
         }
 
