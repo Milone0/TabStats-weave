@@ -268,6 +268,10 @@ public class GameStatsCommand extends Command {
                 return "never played on Hypixel";
             case NO_API_KEY:
                 return "no Hypixel API key set - use /tabstats";
+            case RATE_LIMITED:
+                return "Mojang is rate-limiting name lookups, try again in a minute";
+            case COOLDOWN:
+                return "Hypixel was just asked for this player, try again in a minute";
             default:
                 return "lookup failed, try again";
         }

@@ -1,12 +1,17 @@
 package tabstats.playerapi;
 
 import com.google.gson.JsonObject;
+import com.mojang.authlib.GameProfile;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.network.NetHandlerPlayClient;
+import net.minecraft.client.network.NetworkPlayerInfo;
 import tabstats.TabStats;
 import tabstats.playerapi.api.HypixelAPI;
 import tabstats.playerapi.api.MojangAPI;
 import tabstats.playerapi.exception.ApiRequestException;
 import tabstats.playerapi.exception.BadJsonException;
 import tabstats.playerapi.exception.InvalidKeyException;
+import tabstats.playerapi.exception.PlayerCooldownException;
 import tabstats.playerapi.exception.PlayerNullException;
 import tabstats.util.Handler;
 import tabstats.util.PlayerNames;
@@ -21,8 +26,10 @@ import java.util.UUID;
  * Stats for a player named by hand, for the chat commands.
  *
  * <p>Unlike {@link StatWorld}, which only ever looks at players the client can see, this starts
- * from a name: Mojang turns it into a UUID, Hypixel turns that into stats. Players the stat world
+ * from a name, which has to become a UUID before Hypixel can be asked. Players the stat world
  * already knows are handed back untouched, so asking about someone in your own game costs nothing.
+ * Anyone else in the tab list - yourself included - has their UUID right there in their entry;
+ * only names the client has never seen are sent to Mojang, which rate-limits those lookups.
  *
  * <p>Results are not written into the stat world. A name is a weaker identity than a tab entry -
  * a nicked player may well be wearing the name of someone real, and the tab list must not end up
@@ -35,6 +42,10 @@ public final class PlayerLookup {
         OK,
         /** Mojang has no account under that name, which on Hypixel means a nick. */
         UNKNOWN_NAME,
+        /** The name to UUID services all refused for being asked too often. */
+        RATE_LIMITED,
+        /** Hypixel hands out the same player only about once a minute, and this one was just asked for. */
+        COOLDOWN,
         /** A real account that has never been on Hypixel. */
         NO_HYPIXEL_DATA,
         NO_API_KEY,
@@ -91,7 +102,7 @@ public final class PlayerLookup {
 
     /**
      * Resolves one name. The callback runs on whichever thread the answer became available on -
-     * the calling one when nothing had to be fetched, a worker thread otherwise.
+     * the client thread when nothing had to be fetched, a worker thread otherwise.
      */
     public static void lookup(String rawName, Callback callback) {
         final String name = rawName == null ? "" : rawName.trim();
@@ -100,17 +111,28 @@ public final class PlayerLookup {
             return;
         }
 
-        HPlayer known = fromStatWorld(name);
-        if (known == null) {
-            known = fromCache(name);
-        }
+        /* The stat world and the tab list both belong to the client thread. */
+        Handler.onClientThread(() -> {
+            HPlayer known = fromStatWorld(name);
+            if (known == null) {
+                known = fromCache(name);
+            }
 
-        if (known != null) {
-            callback.onResult(new Result(displayName(known, name), Status.OK, known));
-            return;
-        }
+            if (known != null) {
+                callback.onResult(new Result(displayName(known, name), Status.OK, known));
+                return;
+            }
 
-        Handler.asExecutor(() -> callback.onResult(fetch(name)));
+            GameProfile listed = fromTabList(name);
+            if (listed != null && listed.getId().version() == 1) {
+                /* Version 1 UUIDs are always nicks on Hypixel - Mojang would hand out a stranger. */
+                callback.onResult(new Result(listed.getName(), Status.UNKNOWN_NAME, null));
+                return;
+            }
+
+            final GameProfile profile = listed != null && listed.getId().version() == 4 ? listed : null;
+            Handler.asExecutor(() -> callback.onResult(fetch(name, profile)));
+        });
     }
 
     /** Drops everything remembered, for when the mod is handed a different API key. */
@@ -140,30 +162,38 @@ public final class PlayerLookup {
         return null;
     }
 
-    private static Result fetch(String name) {
-        MojangAPI.Profile profile = new MojangAPI().lookupProfile(name);
-        if (profile == null) {
-            return new Result(name, Status.FAILED, null);
-        }
+    /**
+     * @param listed the player's tab list entry, when they have one - their UUID is then taken
+     *               from it and Mojang is not asked at all
+     */
+    private static Result fetch(String name, GameProfile listed) {
+        UUID uuid;
+        String resolvedName;
 
-        if (!profile.exists()) {
-            return new Result(name, Status.UNKNOWN_NAME, null);
-        }
+        if (listed != null) {
+            uuid = listed.getId();
+            resolvedName = listed.getName();
+        } else {
+            MojangAPI.Profile profile = new MojangAPI().lookupProfile(name);
+            if (profile.failed()) {
+                return new Result(name, profile.isRateLimited() ? Status.RATE_LIMITED : Status.FAILED, null);
+            }
 
-        UUID uuid = profile.getUuid();
-        String resolvedName = profile.getName() == null || profile.getName().trim().isEmpty()
-                ? name
-                : profile.getName();
+            if (!profile.exists()) {
+                return new Result(name, Status.UNKNOWN_NAME, null);
+            }
 
-        /* The real name may differ from the one that was typed, so the caches get another look. */
-        HPlayer known = fromStatWorld(resolvedName);
-        if (known == null) {
-            known = fromCache(resolvedName);
-        }
+            uuid = profile.getUuid();
+            resolvedName = profile.getName() == null || profile.getName().trim().isEmpty()
+                    ? name
+                    : profile.getName();
 
-        if (known != null) {
-            remember(name, known);
-            return new Result(displayName(known, resolvedName), Status.OK, known);
+            /* The real name may differ from the one that was typed, so the cache gets another look. */
+            HPlayer known = fromCache(resolvedName);
+            if (known != null) {
+                remember(name, known);
+                return new Result(displayName(known, resolvedName), Status.OK, known);
+            }
         }
 
         try {
@@ -177,12 +207,48 @@ public final class PlayerLookup {
             return new Result(resolvedName, Status.NO_API_KEY, null);
         } catch (PlayerNullException ex) {
             return new Result(resolvedName, Status.NO_HYPIXEL_DATA, null);
+        } catch (PlayerCooldownException ex) {
+            return new Result(resolvedName, Status.COOLDOWN, null);
         } catch (ApiRequestException | BadJsonException ex) {
             return new Result(resolvedName, Status.FAILED, null);
         } catch (RuntimeException ex) {
             /* A player object shaped differently than expected - treat it like a failed call. */
             return new Result(resolvedName, Status.FAILED, null);
         }
+    }
+
+    /**
+     * The tab list entry of that name, matched regardless of case - your own included, which a
+     * server does not always list. Call on the client thread only.
+     */
+    private static GameProfile fromTabList(String name) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.thePlayer == null) {
+            return null;
+        }
+
+        GameProfile own = mc.thePlayer.getGameProfile();
+        if (isNamed(own, name)) {
+            return own;
+        }
+
+        NetHandlerPlayClient netHandler = mc.getNetHandler();
+        if (netHandler == null) {
+            return null;
+        }
+
+        for (NetworkPlayerInfo info : netHandler.getPlayerInfoMap()) {
+            GameProfile profile = info == null ? null : info.getGameProfile();
+            if (isNamed(profile, name)) {
+                return profile;
+            }
+        }
+
+        return null;
+    }
+
+    private static boolean isNamed(GameProfile profile, String name) {
+        return profile != null && profile.getId() != null && name.equalsIgnoreCase(profile.getName());
     }
 
     /** The player as the tab list already knows them, if their stats were loaded. */
