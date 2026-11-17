@@ -294,8 +294,11 @@ world and the game starting is therefore not always a world change:
 - `StatsTab.appendChatRevealed` drops a player the moment the server lists them in the tab
   list itself, which is exactly what happens when the game starts. Their own entry, drawn
   with the server's formatting, takes over.
-- `ChatListener` clears the lot on the `▬▬▬…` bar Hypixel draws around a game's start and end
-  summary, which also catches players who never made it into this game.
+- `ChatListener` clears the lot on the game's start and end summary, which also catches
+  players who never made it into this game. Hypixel frames that summary with `▬▬▬…` bars,
+  but frames other banners the same way - a lobby that rolls a Bed Wars challenge shows a
+  `TEAM CHALLENGE ACTIVE!` banner while it is still filling up. So `SummaryBanner` collects
+  the lines up to the closing bar and lets a challenge banner pass without clearing anything.
 - a world change clears the lot as well, for when the lobby really is left behind.
 
 A quit line drops that one name again.

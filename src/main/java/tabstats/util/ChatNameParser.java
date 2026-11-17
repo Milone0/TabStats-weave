@@ -14,18 +14,15 @@ import java.util.regex.Pattern;
  * carry no usable identity, so the only moment a name becomes known is when that player writes
  * something. That, and only that, counts as a reveal: a join line names a player too but is
  * deliberately ignored, and party, guild and private messages are rejected because their
- * sender need not be in this lobby. The other lines reported here only retire names again -
- * a quit line drops one, the bar around a game summary drops all of them.
+ * sender need not be in this lobby. The other line reported here only retires a name again:
+ * a quit line drops one. Dropping all of them at the start of a game is {@link SummaryBanner}'s
+ * job, since it takes more than one line to tell.
  */
 public final class ChatNameParser {
     /** Rank tags, guild tags, SkyWars levels - anything the server wraps in brackets. */
     private static final Pattern BRACKET_GROUP = Pattern.compile("\\[[^\\]]*\\]");
     private static final Pattern QUIT_LINE = Pattern.compile("^(.+?) has quit!$");
-    /**
-     * The bar Hypixel draws around a game's start and end summary. It is the one line that marks
-     * the waiting phase as over, and a pre-game lobby does not always sit on its own world, so
-     * this is what retires the reveals of the lobby that just turned into a game.
-     */
+    /** The bar Hypixel draws above and below a banner - a game summary, a challenge, and so on. */
     private static final Pattern SEPARATOR_LINE = Pattern.compile("^\u25AC{8,}$");
     /**
      * Single words that end up in front of a colon in server messages, never a player. This list
@@ -52,6 +49,11 @@ public final class ChatNameParser {
      * @return what the line says about the lobby, or null when it says nothing
      */
     public static Reveal parse(String formattedMessage) {
+        if (isBannerBar(formattedMessage)) {
+            return null;
+        }
+
+
         if (formattedMessage == null) {
             return null;
         }
@@ -69,10 +71,6 @@ public final class ChatNameParser {
         /* "[NPC] Dave: ..." is an NPC talking - looking the name up would find some real "Dave". */
         if (stripped.startsWith("[NPC]")) {
             return null;
-        }
-
-        if (SEPARATOR_LINE.matcher(stripped.replaceAll("\\s+", "")).matches()) {
-            return new Reveal(Kind.CLEAR, null);
         }
 
         Matcher quit = QUIT_LINE.matcher(stripped);
@@ -128,13 +126,17 @@ public final class ChatNameParser {
         return token;
     }
 
+    /** Whether the line is the {@code ▬▬▬…} bar above or below a banner. */
+    public static boolean isBannerBar(String formattedMessage) {
+        String stripped = ChatColor.stripColor(formattedMessage);
+        return stripped != null && SEPARATOR_LINE.matcher(stripped.replaceAll("\\s+", "")).matches();
+    }
+
     public enum Kind {
         /** The player wrote something: show them. */
         REVEAL,
         /** The player left the lobby: drop that one name again. */
-        HIDE,
-        /** The waiting phase is over: drop every name this lobby revealed. */
-        CLEAR
+        HIDE
     }
 
     public static final class Reveal {
@@ -150,7 +152,7 @@ public final class ChatNameParser {
             return this.kind;
         }
 
-        /** The name the line names, null for {@link Kind#CLEAR}. */
+        /** The name the line names. */
         public String getName() {
             return this.name;
         }

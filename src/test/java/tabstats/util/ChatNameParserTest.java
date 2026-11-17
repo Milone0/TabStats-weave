@@ -3,8 +3,10 @@ package tabstats.util;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ChatNameParserTest {
     private static final String BAR = "▬▬▬▬▬▬▬▬▬▬▬▬";
@@ -71,9 +73,11 @@ class ChatNameParserTest {
     }
 
     @Test
-    void theSummaryBarClearsEveryone() {
-        assertReveal(ChatNameParser.Kind.CLEAR, null, "§a§l" + BAR);
-        assertReveal(ChatNameParser.Kind.CLEAR, null, "  " + BAR + "  ");
-        assertNull(ChatNameParser.parse("▬▬▬"));
+    void theBannerBarIsRecognisedButNamesNobody() {
+        assertTrue(ChatNameParser.isBannerBar("§a§l" + BAR));
+        assertTrue(ChatNameParser.isBannerBar("  " + BAR + "  "));
+        assertFalse(ChatNameParser.isBannerBar("▬▬▬"));
+        assertFalse(ChatNameParser.isBannerBar(null));
+        assertNull(ChatNameParser.parse("§a§l" + BAR));
     }
 }
