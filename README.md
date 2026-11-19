@@ -92,6 +92,11 @@ and not to your other versions.
   with their stats, even though the lobby gives them no tab entry — enough to decide
   whether to skip the lobby before it starts. Those rows disappear again once the game
   begins, or when the player leaves
+- in a Bed Wars pre-game lobby, a line above the tab list counts the **full parties** that
+  joined after you: 2 players in Doubles, 3 in 3v3v3v3, 4 in 4v4v4v4 and 4v4. A party is
+  told by its members joining at the same moment; when one of them leaves, the count goes
+  down again, and back up if they return. Your own party is not counted, and neither is
+  anyone who was in the lobby before you
 - `/bw <player>` writes Bedwars stats into your chat, for players that are nowhere near you:
   - `/bw Hans Klaus` — both players, with the stats the menu is set to show, in that order
   - `/bw Hans Klaus fkdr` — only the FKDR of both; name any stats after the players, and

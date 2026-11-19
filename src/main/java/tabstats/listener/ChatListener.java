@@ -14,6 +14,8 @@ import tabstats.util.ChatNameParser;
 import tabstats.util.Gamemodes;
 import tabstats.util.HypixelLocation;
 import tabstats.util.HypixelServer;
+import tabstats.util.LobbyParties;
+import tabstats.util.ChatColor;
 import tabstats.util.PartyTracker;
 import tabstats.util.SummaryBanner;
 
@@ -57,8 +59,14 @@ public class ChatListener {
         /* Dropping names is never gated - the lobby they belong to is gone either way. */
         if (this.banner.offer(message.getFormattedText())) {
             statWorld.clearChatRevealed();
+            LobbyParties.get().reset();
             return;
         }
+
+        Minecraft mc = Minecraft.getMinecraft();
+        LobbyParties.get().enterWorld(mc.theWorld);
+        LobbyParties.get().offer(ChatColor.stripColor(message.getUnformattedText()),
+                mc.thePlayer == null ? null : mc.thePlayer.getName(), System.currentTimeMillis());
 
         ChatNameParser.Reveal reveal = ChatNameParser.parse(message.getFormattedText());
         if (reveal == null) {

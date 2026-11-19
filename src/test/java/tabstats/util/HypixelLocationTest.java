@@ -3,6 +3,7 @@ package tabstats.util;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -112,5 +113,25 @@ class HypixelLocationTest {
         HypixelLocation.handleSentMessage(null);
 
         assertTrue(answer(GAME));
+    }
+
+    @Test
+    void theTeamSizeComesFromTheMode() {
+        assertEquals(1, HypixelLocation.teamSizeOf("BEDWARS_EIGHT_ONE"));
+        assertEquals(2, HypixelLocation.teamSizeOf("BEDWARS_EIGHT_TWO"));
+        assertEquals(2, HypixelLocation.teamSizeOf("BEDWARS_EIGHT_TWO_RUSH"));
+        assertEquals(3, HypixelLocation.teamSizeOf("BEDWARS_FOUR_THREE"));
+        assertEquals(4, HypixelLocation.teamSizeOf("BEDWARS_FOUR_FOUR"));
+        assertEquals(4, HypixelLocation.teamSizeOf("BEDWARS_TWO_FOUR"));
+        assertEquals(0, HypixelLocation.teamSizeOf("BEDWARS_CASTLE"));
+        assertEquals(0, HypixelLocation.teamSizeOf("LOBBY"));
+        assertEquals(0, HypixelLocation.teamSizeOf(null));
+    }
+
+    @Test
+    void theTeamSizeOfTheCurrentGame() {
+        assertEquals(0, HypixelLocation.teamSize(), "unknown before the answer");
+        answer(GAME);
+        assertEquals(1, HypixelLocation.teamSize());
     }
 }
