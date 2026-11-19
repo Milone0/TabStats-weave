@@ -574,6 +574,20 @@ public class StatsTab extends GuiPlayerTabOverlay {
         return hPlayer.getRankedName(row.getName());
     }
 
+    /**
+     * The server-listed players the tab draws a row for, in the order it draws them - so sorted by
+     * team. Chat-revealed players are not part of it. Call on the client thread.
+     */
+    public List<NetworkPlayerInfo> listedPlayers() {
+        if (this.mc.thePlayer == null || this.mc.thePlayer.sendQueue == null) {
+            return Collections.emptyList();
+        }
+
+        TabStats tabStats = TabStats.getTabStats();
+        StatWorld statWorld = tabStats == null ? null : tabStats.getStatWorld();
+        return collectEligiblePlayers(this.mc.thePlayer.sendQueue, statWorld);
+    }
+
     private List<NetworkPlayerInfo> collectEligiblePlayers(NetHandlerPlayClient netHandler, StatWorld statWorld) {
         List<NetworkPlayerInfo> sortedPlayers = field_175252_a.sortedCopy(netHandler.getPlayerInfoMap());
         List<NetworkPlayerInfo> filtered = new ArrayList<>(sortedPlayers.size());

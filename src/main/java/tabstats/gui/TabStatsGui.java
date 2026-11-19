@@ -18,7 +18,7 @@ public class TabStatsGui extends GuiScreen {
     public void initGui() {
         super.initGui();
         this.buttonList.clear();
-        this.titleY = this.height / 2 - 70;
+        this.titleY = this.height / 2 - 82;
         int buttonHeight = 20;
         int rowSpacing = 24;
         int singleButtonWidth = 200;
@@ -26,7 +26,8 @@ public class TabStatsGui extends GuiScreen {
         int toggleX = centerX - singleButtonWidth / 2;
         int modToggleY = this.titleY + rowSpacing;
         int statColumnsY = modToggleY + rowSpacing;
-        int headerToggleY = statColumnsY + rowSpacing;
+        int shoutY = statColumnsY + rowSpacing;
+        int headerToggleY = shoutY + rowSpacing;
 
         ModConfig cfg = ModConfig.getInstance();
 
@@ -34,6 +35,8 @@ public class TabStatsGui extends GuiScreen {
         this.buttonList.add(this.modToggleButton);
 
         this.buttonList.add(new GuiButton(9, toggleX, statColumnsY, singleButtonWidth, buttonHeight, "Stat Columns..."));
+
+        this.buttonList.add(new GuiButton(10, toggleX, shoutY, singleButtonWidth, buttonHeight, "Shout Settings..."));
 
         this.headerFooterButton = new GuiButton(5, toggleX, headerToggleY, singleButtonWidth, buttonHeight, formatHeaderFooterLabel(cfg.isRenderHeaderFooterEnabled()));
         this.buttonList.add(this.headerFooterButton);
@@ -86,6 +89,8 @@ public class TabStatsGui extends GuiScreen {
 
         } else if (button.id == 9) {
             Minecraft.getMinecraft().displayGuiScreen(new StatColumnsGui(this));
+        } else if (button.id == 10) {
+            Minecraft.getMinecraft().displayGuiScreen(new ShoutSettingsGui(this));
         } else if (button.id == 7) {
             Minecraft.getMinecraft().displayGuiScreen(new HypixelApiKeyGui(this));
         } else if (button.id == 8) {
