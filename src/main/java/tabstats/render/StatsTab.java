@@ -8,6 +8,8 @@ import tabstats.playerapi.StatWorld;
 import tabstats.listener.GameOverlayListener;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.util.ChatColor;
+import tabstats.util.HypixelLocation;
+import tabstats.util.LobbyParties;
 import tabstats.util.PlayerNames;
 import tabstats.util.StatFormatting;
 import com.google.common.collect.ComparisonChain;
@@ -200,6 +202,10 @@ public class StatsTab extends GuiPlayerTabOverlay {
         int textColor = ChatColor.WHITE.getRGB();
 
         TextBlock headerBlock = createTextBlock(this.renderHeaderFooter ? this.header : null);
+        String partyLine = partyLine();
+        if (partyLine != null) {
+            headerBlock = headerBlock.withLine(partyLine, textWidth(partyLine));
+        }
         TextBlock footerBlock = createTextBlock(this.renderHeaderFooter ? this.footer : null);
         int headerHeight = headerBlock.height(fontHeight);
         int footerHeight = footerBlock.height(fontHeight);
@@ -394,6 +400,23 @@ public class StatsTab extends GuiPlayerTabOverlay {
                 ? Collections.<String, Stat>emptyMap()
                 : hPlayer.getGameStatsByKey(gamemode);
         return new Row(playerInfo, hPlayer, chatRow, stats);
+    }
+
+    /**
+     * The count of full parties that joined the pre-game lobby, shown above the player list -
+     * or null outside a pre-game lobby, and in modes without teams.
+     */
+    private String partyLine() {
+        LobbyParties parties = LobbyParties.get();
+        parties.enterWorld(this.mc.theWorld);
+        int teamSize = HypixelLocation.teamSize();
+        if (!parties.isWaiting() || teamSize < 2) {
+            return null;
+        }
+
+        int count = parties.fullParties(teamSize, this.mc.thePlayer.getName(), System.currentTimeMillis());
+        return ChatColor.GOLD + "Full parties: " + (count > 0 ? ChatColor.RED : ChatColor.WHITE) + count
+                + ChatColor.DARK_GRAY + " (" + teamSize + " players each, since you joined)";
     }
 
     private TextBlock createTextBlock(IChatComponent component) {
@@ -734,6 +757,13 @@ public class StatsTab extends GuiPlayerTabOverlay {
 
         private String[] getLines() {
             return this.lines;
+        }
+
+        /** The same block with one more line at the bottom. */
+        private TextBlock withLine(String line, int width) {
+            String[] extended = java.util.Arrays.copyOf(this.lines, this.lines.length + 1);
+            extended[this.lines.length] = line;
+            return new TextBlock(extended, Math.max(this.maxWidth, width));
         }
     }
 

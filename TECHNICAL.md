@@ -303,6 +303,27 @@ world and the game starting is therefore not always a world change:
 
 A quit line drops that one name again.
 
+### Full parties in the pre-game lobby
+
+The join lines that name nobody still give parties away. `LobbyParties` reads them, and
+`StatsTab` shows its count as an extra header line while a Bed Wars pre-game lobby is filling.
+Two observations carry it, both taken from ~500 logged lobbies:
+
+- a party is moved in as one, so its join lines arrive together. Consecutive join lines one
+  second apart were no more frequent than two or five seconds apart, while the same second
+  was eight times as frequent - so join lines within `BURST_GAP_MS` (500 ms) form one group;
+- the made-up name in a join line stays the same while the player is in that lobby: their
+  quit line uses it, and so does their join line when they come back.
+
+A group holds as many full parties as the team size fits into it, and counts only those it
+still has the players for, so a member quitting lowers the count and their return restores
+it. The team size is read from the `/locraw` mode (`BEDWARS_<teams>_<players>`); without one
+the line is not shown. The group that contains the player's own join line is their own party
+and is skipped. Players already in the lobby before the player arrived are never announced,
+so they cannot be counted. Counts are dropped on the game's start summary, and when the world
+changes - noticed by the counter itself, since the player's own join line arrives in the same
+breath as the new world, before the tick that would otherwise notice it.
+
 ## 6. Lifecycle: the one real trap
 
 Weave calls `ModInitializer.init()` from the **head of `Minecraft.main`**. At that moment

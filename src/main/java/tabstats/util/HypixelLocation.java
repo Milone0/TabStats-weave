@@ -192,6 +192,49 @@ public final class HypixelLocation {
                 && System.currentTimeMillis() - lastRequest >= RETRY_AFTER_MS;
     }
 
+    /**
+     * How many players make up one team in the current game, from the {@code /locraw} mode - 0
+     * when that is not known (yet), or the mode has no fixed team size.
+     */
+    public static int teamSize() {
+        return teamSizeOf(mode);
+    }
+
+    /**
+     * Reads the team size out of a Bed Wars mode, {@code BEDWARS_<teams>_<players>[_<variant>]}:
+     * 2 for {@code BEDWARS_EIGHT_TWO} and {@code BEDWARS_EIGHT_TWO_RUSH}, 4 for
+     * {@code BEDWARS_FOUR_FOUR} and the 4v4 {@code BEDWARS_TWO_FOUR}. 0 for anything else.
+     */
+    static int teamSizeOf(String mode) {
+        if (mode == null) {
+            return 0;
+        }
+
+        String[] parts = mode.toUpperCase(Locale.ROOT).split("_");
+        if (parts.length < 3 || !"BEDWARS".equals(parts[0]) || numberWord(parts[1]) == 0) {
+            return 0;
+        }
+
+        return numberWord(parts[2]);
+    }
+
+    private static int numberWord(String word) {
+        switch (word) {
+            case "ONE":
+                return 1;
+            case "TWO":
+                return 2;
+            case "THREE":
+                return 3;
+            case "FOUR":
+                return 4;
+            case "EIGHT":
+                return 8;
+            default:
+                return 0;
+        }
+    }
+
     /** A short summary of the current location, for the debug output of {@code /tabstats}. */
     public static String describe() {
         if (!resolved) {
