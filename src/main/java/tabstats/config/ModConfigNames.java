@@ -5,7 +5,8 @@ public enum ModConfigNames {
     RENDER_HEADER_FOOTER("RenderHeaderFooter"),
     MOD_ENABLED("ModEnabled"),
     URCHIN_API_KEY("UrchinApiKey"),
-    STAT_COLUMNS("StatColumns");
+    STAT_COLUMNS("StatColumns"),
+    SHOUT("Shout");
 
     private final String name;
 

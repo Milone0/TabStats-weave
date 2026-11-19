@@ -25,7 +25,7 @@ See [TECHNICAL.md](TECHNICAL.md).
 
 ## Get the jar
 
-Download `TabStats-1.3.0-weave.2.jar` from the
+Download `TabStats-1.3.0-weave.3.jar` from the
 [latest release](https://github.com/Milone0/TabStats-weave/releases/latest). That is all
 most people need — continue at [Install](#install).
 
@@ -38,7 +38,7 @@ cd TabStats-weave
 ```
 
 The first run downloads Gradle, the Weave artifacts and the Minecraft libraries, and
-remaps the vanilla jar — expect a few minutes. Result: `build/libs/TabStats-1.3.0-weave.2.jar`.
+remaps the vanilla jar — expect a few minutes. Result: `build/libs/TabStats-1.3.0-weave.3.jar`.
 
 `build` also runs the unit tests in `src/test`, which cover the parts that read Hypixel's chat
 (names, `/party list`, `/locraw`) and the column layout. `./gradlew test` runs just those.
@@ -97,6 +97,20 @@ and not to your other versions.
   - `/bw Hans Klaus fkdr` — only the FKDR of both; name any stats after the players, and
     they are shown in the order you typed them, even ones switched off in the menu
   - `/bw p` — everyone in your party (`/bw p fkdr` for one stat); says so when you are in none
+- `/bw shout` *sends* what the tab shows into the chat you are in (team in a game, party
+  after `/chat p`): one message per player, team first, then the tab's columns —
+  `Red: Hans STAR:412 WS:12 FKDR:3.45 ...`. Plain text only, since players can send neither
+  colours nor line breaks, and at most 100 characters per message. Messages go out a second
+  apart.
+  - `/bw shout` — only the good players of the other teams; what counts as good is set
+    under `/ts` → *Shout Settings...* (a minimum per stat, any or all of them)
+  - `/bw shout all` (or `.`) — everyone in the game
+  - `/bw shout red blue` — everyone in those teams
+  - `/bw shout Hans Klaus` — those players; works outside a game too
+  - `/shout /bw shout ...` — the same, but to everyone in the game. `/shout` works once a
+    minute, so this packs everything into one message (`Red: A | B // Blue: C`) with as
+    much as fits; what did not fit is shown only to you
+  - *Shout Settings...* can also run `/bw shout` by itself at the start of every game
 - the menu also toggles the mod and the header/footer
 - on any server other than Hypixel, and in singleplayer, the mod switches itself off: vanilla
   tab list, no API calls, and `/bw` goes to that server. `/tabstats` still opens the menu

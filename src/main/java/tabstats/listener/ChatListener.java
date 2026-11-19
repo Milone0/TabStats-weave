@@ -8,9 +8,12 @@ import net.weavemc.api.event.ChatEvent;
 import net.weavemc.api.event.SubscribeEvent;
 import tabstats.TabStats;
 import tabstats.playerapi.WorldLoader;
+import tabstats.shout.ShoutRequest;
+import tabstats.shout.Shouter;
 import tabstats.util.ChatNameParser;
 import tabstats.util.Gamemodes;
 import tabstats.util.HypixelLocation;
+import tabstats.util.HypixelServer;
 import tabstats.util.PartyTracker;
 import tabstats.util.SummaryBanner;
 
@@ -89,6 +92,17 @@ public class ChatListener {
     /** A /locraw the player typed in gets its answer shown, unlike the ones the mod sends. */
     @SubscribeEvent
     public void onChatSent(ChatEvent.Sent event) {
+        /*
+         * "/shout /bw shout ..." reaches the command bus as a /shout, which is not ours - so it is
+         * caught here, before the server could shout the literal text.
+         */
+        String[] shoutWords = HypixelServer.isOnHypixel() ? ShoutRequest.fromShoutCommand(event.getMessage()) : null;
+        if (shoutWords != null) {
+            event.setCancelled(true);
+            Shouter.run("BEDWARS", shoutWords, true, false);
+            return;
+        }
+
         HypixelLocation.handleSentMessage(event.getMessage());
     }
 

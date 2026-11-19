@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 
 import static tabstats.config.ModConfigNames.APIKEY;
 import static tabstats.config.ModConfigNames.RENDER_HEADER_FOOTER;
+import static tabstats.config.ModConfigNames.SHOUT;
 import static tabstats.config.ModConfigNames.STAT_COLUMNS;
 import static tabstats.config.ModConfigNames.MOD_ENABLED;
 import static tabstats.config.ModConfigNames.URCHIN_API_KEY;
@@ -29,6 +30,7 @@ public class ModConfig {
     private volatile boolean renderHeaderFooter = true;
     private volatile boolean modEnabled = true;
     private final StatColumnLayout statColumns = new StatColumnLayout();
+    private final ShoutSettings shoutSettings = new ShoutSettings();
     private long configLastLoaded = -1L;
 
     public static ModConfig getInstance() {
@@ -99,6 +101,11 @@ public class ModConfig {
         return this.statColumns;
     }
 
+    /** Who {@code /bw shout} reports, and whether it runs by itself. Edited through the /tabstats GUI. */
+    public ShoutSettings getShoutSettings() {
+        return this.shoutSettings;
+    }
+
     private void reloadKeysFromDiskIfNeeded() {
         File file = getFile();
         if (!file.exists()) {
@@ -149,6 +156,7 @@ public class ModConfig {
                 defaults.addProperty(APIKEY.toString(), "");
                 defaults.addProperty(URCHIN_API_KEY.toString(), "");
                 defaults.add(STAT_COLUMNS.toString(), Handler.getGson().toJsonTree(this.statColumns.toSerializable()));
+                defaults.add(SHOUT.toString(), Handler.getGson().toJsonTree(this.shoutSettings.toSerializable()));
 
                 try (FileWriter writer = new FileWriter(file)) {
                     Handler.getGson().toJson(defaults, writer);
@@ -172,6 +180,7 @@ public class ModConfig {
         renderHeaderFooter = getBoolean(config, RENDER_HEADER_FOOTER, true);
         modEnabled = getBoolean(config, MOD_ENABLED, true);
         statColumns.loadFrom(getJsonObject(config, STAT_COLUMNS));
+        shoutSettings.loadFrom(getJsonObject(config, SHOUT));
         configLastLoaded = getFile().lastModified();
     }
 
@@ -213,6 +222,7 @@ public class ModConfig {
         map.put(APIKEY.toString(), this.apiKey == null ? "" : this.apiKey); // Use the internal field, not getApiKey()
         map.put(URCHIN_API_KEY.toString(), this.urchinApiKey == null ? "" : this.urchinApiKey);
         map.put(STAT_COLUMNS.toString(), this.statColumns.toSerializable());
+        map.put(SHOUT.toString(), this.shoutSettings.toSerializable());
         File file = getFile();
         try (Writer writer = new FileWriter(file)) {
             Handler.getGson().toJson(map, writer);

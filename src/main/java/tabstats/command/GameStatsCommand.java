@@ -10,6 +10,8 @@ import tabstats.playerapi.HPlayer;
 import tabstats.playerapi.PlayerLookup;
 import tabstats.playerapi.api.stats.Stat;
 import tabstats.playerapi.api.stats.StatString;
+import tabstats.shout.ShoutText;
+import tabstats.shout.Shouter;
 import tabstats.util.ChatColor;
 import tabstats.util.Handler;
 import tabstats.util.HypixelServer;
@@ -17,6 +19,7 @@ import tabstats.util.PartyTracker;
 import tabstats.util.StatFormatting;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -38,6 +41,7 @@ import java.util.function.Supplier;
  *   /bw Hans Klaus        the same for two players
  *   /bw Hans Klaus fkdr   only the FKDR of both
  *   /bw p fkdr            only the FKDR, for everyone in the party
+ *   /bw shout [...]       the tab list into the chat, for the team - see {@link Shouter}
  * </pre>
  */
 public class GameStatsCommand extends Command {
@@ -72,6 +76,11 @@ public class GameStatsCommand extends Command {
      */
     @Override
     public void execute(String[] args) {
+        if (args.length > 1 && isShoutToken(args[1])) {
+            Shouter.run(this.gamemode, Arrays.copyOfRange(args, 2, args.length), false, false);
+            return;
+        }
+
         List<String> names = new ArrayList<>();
         List<String> statKeys = new ArrayList<>();
         Set<String> knownStats = knownStats();
@@ -153,6 +162,18 @@ public class GameStatsCommand extends Command {
         if (args.length == 1) {
             if ("p".startsWith(current)) {
                 suggestions.add("p");
+            }
+            if ("shout".startsWith(current)) {
+                suggestions.add("shout");
+            }
+        } else if (isShoutToken(args[0])) {
+            List<String> words = new ArrayList<>();
+            words.add("all");
+            words.addAll(ShoutText.teamWords());
+            for (String word : words) {
+                if (word.startsWith(current)) {
+                    suggestions.add(word);
+                }
             }
         } else {
             for (String stat : knownStats()) {
@@ -303,6 +324,11 @@ public class GameStatsCommand extends Command {
         return "p".equalsIgnoreCase(name) || "party".equalsIgnoreCase(name);
     }
 
+    /** Like "party", "shout" is a word a player could be named - the price of a readable command. */
+    private boolean isShoutToken(String token) {
+        return "shout".equalsIgnoreCase(token);
+    }
+
     private List<String> dedupe(List<String> names) {
         List<String> unique = new ArrayList<>(names.size());
         for (String name : names) {
@@ -328,6 +354,9 @@ public class GameStatsCommand extends Command {
         lines.add(ChatColor.GOLD + "[" + this.tag + "] " + ChatColor.GRAY + "Usage:");
         lines.add(ChatColor.GRAY + "  " + name + " <player> [player ...] [stat ...]");
         lines.add(ChatColor.GRAY + "  " + name + " p" + ChatColor.DARK_GRAY + " - everyone in your party");
+        lines.add(ChatColor.GRAY + "  " + name + " shout [all | <team> ... | <player> ...]"
+                + ChatColor.DARK_GRAY + " - the tab list into your chat");
+        lines.add(ChatColor.GRAY + "  /shout " + name + " shout ..." + ChatColor.DARK_GRAY + " - the same, to everyone");
         lines.add(ChatColor.GRAY + "  Stats: " + ChatColor.DARK_GRAY + join(knownStats()));
         sendLines(lines);
     }
