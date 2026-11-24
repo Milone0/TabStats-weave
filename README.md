@@ -25,7 +25,7 @@ See [TECHNICAL.md](TECHNICAL.md).
 
 ## Get the jar
 
-Download `TabStats-1.3.0-weave.3.jar` from the
+Download `TabStats-1.3.0-weave.4.jar` from the
 [latest release](https://github.com/Milone0/TabStats-weave/releases/latest). That is all
 most people need — continue at [Install](#install).
 
@@ -38,7 +38,7 @@ cd TabStats-weave
 ```
 
 The first run downloads Gradle, the Weave artifacts and the Minecraft libraries, and
-remaps the vanilla jar — expect a few minutes. Result: `build/libs/TabStats-1.3.0-weave.3.jar`.
+remaps the vanilla jar — expect a few minutes. Result: `build/libs/TabStats-1.3.0-weave.4.jar`.
 
 `build` also runs the unit tests in `src/test`, which cover the parts that read Hypixel's chat
 (names, `/party list`, `/locraw`) and the column layout. `./gradlew test` runs just those.
