@@ -119,7 +119,7 @@ and not to your other versions.
 - the menu also toggles the mod and the header/footer
 - on any server other than Hypixel, and in singleplayer, the mod switches itself off: vanilla
   tab list, no API calls, and `/bw` goes to that server. `/tabstats` still opens the menu
-- optional: an [Urchin](https://urchin.ws) key adds cheater tags, Bedwars only.
+- optional: an [Urchin](https://discord.gg/urchin) key adds cheater tags, Bedwars only.
   Without one that column is just a grey `-`
 
 Settings and keys live in `%APPDATA%\.minecraft\tabstats\config.json`, in plaintext.

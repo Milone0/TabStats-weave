@@ -9,7 +9,6 @@ import com.google.gson.JsonSyntaxException;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.util.EntityUtils;
@@ -18,12 +17,14 @@ import tabstats.playerapi.exception.BadJsonException;
 import tabstats.util.BuildInfo;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,21 +32,25 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
- * Minimal helper for the Urchin /player endpoint. The only things TabStats cares about are
+ * Minimal helper for the Urchin batch tag endpoint. The only things TabStats cares about are
  * the report type, its reason, and when it was added.
  */
 public class UrchinAPI {
-    private static final String PLAYER_ENDPOINT = "https://urchin.ws/player";
+    /** Batch lookup by UUID. The old https://urchin.ws/player endpoint is gone; the domain is parked. */
+    private static final String PLAYERS_ENDPOINT = "https://api.urchin.gg/v3/players";
     private static final String USER_AGENT = "TabStats-Urchin/" + BuildInfo.VERSION;
+    /** Urchin processes at most this many UUIDs per request and silently drops the rest. */
+    private static final int MAX_BATCH_SIZE = 100;
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
 
     /**
-     * Issues a POST to https://urchin.ws/player with the requested usernames and converts the response
+     * Issues a POST to {@value #PLAYERS_ENDPOINT} with the requested UUIDs and converts the response
      * into lightweight {@link UrchinReport} instances. Only Urchin report categories enumerated in
      * {@link UrchinReportType} are retained.
      *
      * @param apiKey    Urchin API key
-     * @param usernames Player names or UUIDs to check
-     * @return Map keyed by normalized username containing zero or more hits
+     * @param usernames Player UUIDs (without dashes) to check
+     * @return Map keyed by UUID containing zero or more hits
      */
     public Map<String, List<UrchinReport>> fetchPlayerReports(String apiKey, Collection<String> usernames)
             throws ApiRequestException, BadJsonException {
@@ -64,23 +69,30 @@ public class UrchinAPI {
             return Collections.emptyMap();
         }
 
-        JsonObject payload = new JsonObject();
-        JsonArray usernameArray = new JsonArray();
-        for (String username : normalizedUsernames) {
-            usernameArray.add(new JsonPrimitive(username));
-        }
-        payload.add("usernames", usernameArray);
+        Map<String, List<UrchinReport>> results = new LinkedHashMap<>();
+        for (int start = 0; start < normalizedUsernames.size(); start += MAX_BATCH_SIZE) {
+            List<String> chunk = normalizedUsernames.subList(start, Math.min(start + MAX_BATCH_SIZE, normalizedUsernames.size()));
 
-        URI uri = buildUri(apiKey.trim());
-        JsonObject response = execute(uri, payload.toString());
-        return parsePlayerReports(response, normalizedUsernames);
+            JsonObject payload = new JsonObject();
+            JsonArray uuidArray = new JsonArray();
+            for (String uuid : chunk) {
+                uuidArray.add(new JsonPrimitive(uuid));
+            }
+            payload.add("uuids", uuidArray);
+
+            JsonObject response = execute(apiKey.trim(), payload.toString());
+            results.putAll(parsePlayerReports(response, chunk));
+        }
+        return results;
     }
 
-    private JsonObject execute(URI uri, String body) throws ApiRequestException, BadJsonException {
-        HttpPost request = new HttpPost(uri);
+    private JsonObject execute(String apiKey, String body) throws ApiRequestException, BadJsonException {
+        HttpPost request = new HttpPost(PLAYERS_ENDPOINT);
         request.setHeader("Accept", "application/json");
         request.setHeader("Content-Type", "application/json");
         request.setHeader("User-Agent", USER_AGENT);
+        // A header rather than a query parameter, so the key never ends up in a logged URL
+        request.setHeader("X-API-Key", apiKey);
         request.setEntity(new StringEntity(body, ContentType.APPLICATION_JSON));
 
         try (CloseableHttpResponse response = Http.CLIENT.execute(request)) {
@@ -102,6 +114,12 @@ public class UrchinAPI {
             }
 
             String errorMessage = "Urchin API returned status code " + statusCode;
+            if (statusCode == 401) {
+                // An unknown key gets a 401 with an empty body
+                errorMessage = "Urchin API key is invalid (401)";
+            } else if (statusCode == 403) {
+                errorMessage = "Urchin API key is locked or lacks permission (403)";
+            }
             if (payload != null) {
                 if (payload.has("message") && payload.get("message").isJsonPrimitive()) {
                     errorMessage = payload.get("message").getAsString();
@@ -111,7 +129,7 @@ public class UrchinAPI {
             }
             throw new ApiRequestException(errorMessage);
         } catch (IOException ex) {
-            throw new ApiRequestException("Unable to reach the Urchin API");
+            throw new ApiRequestException("Unable to reach the Urchin API (" + ex + ")");
         }
     }
 
@@ -148,28 +166,35 @@ public class UrchinAPI {
     }
 
     private static UrchinReport toReport(JsonObject reportObject) {
-        if (reportObject == null || !reportObject.has("type")) {
+        if (reportObject == null) {
             return null;
         }
 
-        UrchinReportType type = UrchinReportType.fromWireValue(getString(reportObject, "type", null));
+        UrchinReportType type = UrchinReportType.fromWireValue(
+                getString(reportObject, "tag_type", getString(reportObject, "type", null)));
         if (type == null) {
             return null;
         }
 
-        String addedOn = getString(reportObject, "added_on", getString(reportObject, "addedOn", ""));
+        String addedOn = formatAddedOn(reportObject.get("added_on"));
         String reason = getString(reportObject, "reason", "");
         return new UrchinReport(type, addedOn, reason);
     }
 
-    private static URI buildUri(String apiKey) throws ApiRequestException {
-        try {
-            URIBuilder builder = new URIBuilder(PLAYER_ENDPOINT);
-            builder.addParameter("key", apiKey);
-            return builder.build();
-        } catch (URISyntaxException ex) {
-            throw new ApiRequestException("Failed to build Urchin API request URL");
+    /** {@code added_on} is a Unix timestamp in milliseconds; turned into a plain date. */
+    private static String formatAddedOn(JsonElement element) {
+        if (element == null || element.isJsonNull() || !element.isJsonPrimitive()) {
+            return "";
         }
+        JsonPrimitive primitive = element.getAsJsonPrimitive();
+        if (primitive.isNumber()) {
+            try {
+                return Instant.ofEpochMilli(primitive.getAsLong()).atZone(ZoneId.systemDefault()).format(DATE_FORMAT);
+            } catch (RuntimeException ex) {
+                return "";
+            }
+        }
+        return primitive.getAsString();
     }
 
     private static String getString(JsonObject object, String key, String fallback) {
